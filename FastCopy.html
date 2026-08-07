@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastCopy - Clipboard Cache</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255,255,255,0.95); border-radius: 16px; padding: 32px;
+            max-width: 700px; width: 100%; margin: 0 auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h2 { color: #1a1a2e; margin-bottom: 20px; font-size: 1.4rem; }
+        .form-group { margin-bottom: 18px; }
+        .form-group label {
+            display: block; font-size: 0.85rem; color: #333;
+            font-weight: 500; margin-bottom: 6px;
+        }
+        .form-group textarea, .form-group input[type="text"] {
+            width: 100%; padding: 10px 14px; border: 2px solid #e0e0e0;
+            border-radius: 8px; font-size: 0.9rem; transition: border-color 0.2s;
+            font-family: inherit; resize: vertical;
+        }
+        .form-group textarea:focus, .form-group input[type="text"]:focus {
+            outline: none; border-color: #2c5364;
+        }
+        .paste-area {
+            border: 2px dashed #ccc; border-radius: 10px; padding: 30px;
+            text-align: center; color: #888; cursor: pointer;
+            transition: border-color 0.2s, background 0.2s; min-height: 100px;
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 8px; position: relative;
+        }
+        .paste-area:hover, .paste-area.dragover {
+            border-color: #2c5364; background: #f0f7fa;
+        }
+        .paste-area img {
+            max-width: 100%; max-height: 200px; border-radius: 6px;
+        }
+        .paste-area .paste-hint { font-size: 0.85rem; }
+        .paste-area .clear-btn {
+            position: absolute; top: 8px; right: 8px; background: #e74c3c;
+            color: #fff; border: none; border-radius: 50%; width: 24px; height: 24px;
+            cursor: pointer; font-size: 0.8rem; display: none;
+        }
+        .tags-container {
+            display: flex; flex-wrap: wrap; gap: 6px; padding: 8px;
+            border: 2px solid #e0e0e0; border-radius: 8px; min-height: 42px;
+            cursor: text; transition: border-color 0.2s;
+        }
+        .tags-container:focus-within { border-color: #2c5364; }
+        .tag-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: #2c5364; color: #fff; padding: 4px 10px;
+            border-radius: 20px; font-size: 0.8rem;
+        }
+        .tag-chip button {
+            background: none; border: none; color: rgba(255,255,255,0.8);
+            cursor: pointer; font-size: 1rem; line-height: 1;
+        }
+        .tag-chip button:hover { color: #fff; }
+        .tag-input {
+            border: none; outline: none; font-size: 0.85rem;
+            flex: 1; min-width: 80px; padding: 4px;
+        }
+        .tag-suggestions {
+            position: absolute; top: 100%; left: 0; right: 0;
+            background: #fff; border: 2px solid #e0e0e0; border-top: none;
+            border-radius: 0 0 8px 8px; max-height: 150px; overflow-y: auto;
+            z-index: 20; display: none;
+        }
+        .tag-suggestions.show { display: block; }
+        .tag-suggestions .tag-option {
+            padding: 8px 12px; cursor: pointer; font-size: 0.85rem;
+            color: #333; transition: background 0.15s;
+        }
+        .tag-suggestions .tag-option:hover,
+        .tag-suggestions .tag-option.highlighted {
+            background: #f0f7fa; color: #2c5364;
+        }
+        .tags-wrapper { position: relative; }
+        .btn-save {
+            width: 100%; padding: 14px; border: none; border-radius: 10px;
+            background: linear-gradient(135deg, #2c5364, #203a43);
+            color: #fff; font-size: 1rem; font-weight: 600;
+            cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .btn-save:hover {
+            transform: translateY(-2px); box-shadow: 0 6px 20px rgba(44,83,100,0.4);
+        }
+        .btn-save:active { transform: translateY(0); }
+        /* List page */
+        .search-bar {
+            display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
+        }
+        .search-bar input {
+            flex: 1; min-width: 180px; padding: 10px 14px;
+            border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+        .search-bar input:focus { outline: none; border-color: #2c5364; }
+        .search-bar select {
+            padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px;
+            font-size: 0.9rem; background: #fff; cursor: pointer;
+        }
+        .entry-list { display: flex; flex-direction: column; gap: 6px; }
+        .entry-card {
+            background: #f9fafb; border: 2px solid #e8e8e8; border-radius: 10px;
+            padding: 10px 80px 10px 14px; cursor: pointer; transition: all 0.2s;
+            position: relative;
+        }
+        .entry-card:hover { border-color: #2c5364; background: #f0f7fa; }
+        .entry-card.copied { border-color: #27ae60; background: #eafaf1; }
+        .entry-card .entry-value {
+            font-family: 'Courier New', monospace; font-size: 1rem;
+            color: #1a1a2e; font-weight: 600; word-break: break-all;
+        }
+        .entry-card .entry-value img {
+            max-width: 100%; max-height: 120px; border-radius: 6px; margin-top: 6px;
+        }
+        .entry-card .entry-tags {
+            display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px;
+        }
+        .entry-card .entry-tag {
+            background: #2c5364; color: #fff; padding: 2px 8px;
+            border-radius: 12px; font-size: 0.7rem;
+        }
+        .entry-card .entry-remark {
+            color: #888; font-size: 0.8rem; margin-top: 6px; font-style: italic;
+        }
+        .entry-card .entry-actions {
+            position: absolute; top: 6px; right: 6px; display: flex; gap: 2px;
+            z-index: 10;
+        }
+        .entry-card .entry-actions button {
+            background: rgba(255,255,255,0.8); border: 1px solid #ddd; cursor: pointer;
+            font-size: 1.1rem; opacity: 0.6; transition: opacity 0.2s, background 0.2s;
+            padding: 4px 6px; min-width: 32px; min-height: 32px; display: inline-flex;
+            align-items: center; justify-content: center; border-radius: 6px;
+        }
+        .entry-card .entry-actions button:hover {
+            opacity: 1; background: #fff;
+        }
+        .entry-card:hover .entry-actions button { opacity: 1; }
+        .entry-card .copy-hint {
+            position: absolute; bottom: 6px; right: 12px;
+            font-size: 0.7rem; color: #aaa; z-index: 1;
+        }
+        .io-bar {
+            display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 16px;
+        }
+        .io-bar button {
+            padding: 8px 14px; border: 2px solid #e0e0e0; border-radius: 8px;
+            background: #fff; font-size: 0.8rem; cursor: pointer;
+            font-weight: 500; transition: all 0.2s;
+        }
+        .io-bar button:hover { border-color: #2c5364; background: #f0f7fa; }
+        .empty-state {
+            text-align: center; color: #aaa; padding: 40px; font-size: 0.95rem;
+        }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #27ae60; color: #fff; padding: 12px 24px;
+            border-radius: 8px; font-size: 0.9rem; font-weight: 500;
+            opacity: 0; transition: transform 0.3s, opacity 0.3s;
+            pointer-events: none; z-index: 999;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        .page { display: none; }
+        .page.active { display: block; }
+    </style>
+</head>
+<body>
+    <script src="nav.js"></script>
+
+    <!-- ADD PAGE -->
+    <div class="container page" id="pageAdd">
+        <h2 id="pageAddTitle">Add New Entry</h2>
+        <div id="resetBar" style="display:none; margin-bottom:16px;">
+            <button onclick="resetForm()" style="padding:8px 14px; border:2px solid #e74c3c; border-radius:8px; background:#fff; color:#e74c3c; font-size:0.85rem; font-weight:500; cursor:pointer; transition:all 0.2s;">&#8592; Cancel Edit</button>
+        </div>
+        <div class="form-group">
+            <label>Value (type text, paste text/image, or drag an image)</label>
+            <div class="paste-area" id="pasteArea">
+                <span class="paste-hint">Click to type, Ctrl+V to paste, or drag &amp; drop an image</span>
+                <button class="clear-btn" id="clearBtn" onclick="clearPaste(event)">&times;</button>
+            </div>
+            <textarea id="textInput" rows="3" placeholder="Type or paste text here..." style="margin-top:8px;"></textarea>
+        </div>
+        <div class="form-group">
+            <label>Tags (type and press Enter)</label>
+            <div class="tags-wrapper">
+                <div class="tags-container" id="tagsContainer">
+                    <input type="text" class="tag-input" id="tagInput" placeholder="Add tag..." autocomplete="off">
+                </div>
+                <div class="tag-suggestions" id="tagSuggestions"></div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Remark (optional)</label>
+            <input type="text" id="remarkInput" placeholder="Any notes...">
+        </div>
+        <button class="btn-save" onclick="saveEntry()">Save Entry</button>
+    </div>
+    <!-- LIST PAGE -->
+    <div class="container page active" id="pageList">
+        <h2>Saved Entries</h2>
+        <div class="io-bar">
+            <button onclick="exportData()">&#128229; Export JSON</button>
+            <button onclick="document.getElementById('importFile').click()">&#128228; Import JSON</button>
+            <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+        </div>
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="Search value or remark..." oninput="renderList()">
+            <select id="tagFilter" onchange="renderList()">
+                <option value="">All Tags</option>
+            </select>
+        </div>
+        <div class="entry-list" id="entryList">
+            <div class="empty-state">No entries yet. Add one!</div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Copied!</div>
+    <script>
+        // --- State ---
+        let entries = JSON.parse(localStorage.getItem('fastcopy_entries') || '[]');
+        let currentTags = [];
+        let imageData = null; // base64
+        let editingId = null; // track if we're editing
+
+        // --- Page Navigation ---
+        function showPage(page) {
+            document.getElementById('pageAdd').classList.toggle('active', page === 'add');
+            document.getElementById('pageList').classList.toggle('active', page === 'list');
+            document.getElementById('navAdd').classList.toggle('active', page === 'add');
+            document.getElementById('navList').classList.toggle('active', page === 'list');
+            if (page === 'list') { populateTagFilter(); renderList(); }
+        }
+
+        // --- Toast ---
+        function showToast(msg) {
+            var t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(function() { t.classList.remove('show'); }, 2000);
+        }
+
+        // --- Paste Area (Image auto-detect) ---
+        var pasteArea = document.getElementById('pasteArea');
+        var textInput = document.getElementById('textInput');
+
+        pasteArea.addEventListener('click', function() { textInput.focus(); });
+        // Paste handler (auto-detect image vs text)
+        document.addEventListener('paste', function(e) {
+            var items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    e.preventDefault();
+                    var file = items[i].getAsFile();
+                    readImageFile(file);
+                    return;
+                }
+            }
+            // Text paste goes to textarea naturally
+        });
+
+        // Drag & drop image
+        pasteArea.addEventListener('dragover', function(e) {
+            e.preventDefault(); pasteArea.classList.add('dragover');
+        });
+        pasteArea.addEventListener('dragleave', function() {
+            pasteArea.classList.remove('dragover');
+        });
+        pasteArea.addEventListener('drop', function(e) {
+            e.preventDefault(); pasteArea.classList.remove('dragover');
+            var file = e.dataTransfer.files[0];
+            if (file && file.type.indexOf('image') !== -1) { readImageFile(file); }
+        });
+        function readImageFile(file) {
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                imageData = ev.target.result;
+                pasteArea.querySelector('.paste-hint').style.display = 'none';
+                var existing = pasteArea.querySelector('img');
+                if (existing) existing.remove();
+                var img = document.createElement('img');
+                img.src = imageData;
+                pasteArea.appendChild(img);
+                document.getElementById('clearBtn').style.display = 'block';
+                textInput.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearPaste(e) {
+            e.stopPropagation();
+            imageData = null;
+            var img = pasteArea.querySelector('img');
+            if (img) img.remove();
+            pasteArea.querySelector('.paste-hint').style.display = '';
+            document.getElementById('clearBtn').style.display = 'none';
+            textInput.style.display = '';
+            textInput.value = '';
+        }
+
+        // --- Tag Chips ---
+        var tagInput = document.getElementById('tagInput');
+        var tagsContainer = document.getElementById('tagsContainer');
+        var tagSuggestions = document.getElementById('tagSuggestions');
+        var highlightedIdx = -1;
+
+        tagsContainer.addEventListener('click', function() { tagInput.focus(); });
+
+        tagInput.addEventListener('input', function() {
+            showTagSuggestions(tagInput.value.trim());
+        });
+
+        tagInput.addEventListener('keydown', function(e) {
+            var options = tagSuggestions.querySelectorAll('.tag-option');
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                highlightedIdx = Math.min(highlightedIdx + 1, options.length - 1);
+                updateHighlight(options);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                highlightedIdx = Math.max(highlightedIdx - 1, -1);
+                updateHighlight(options);
+                return;
+            }
+            if ((e.key === 'Enter' || e.key === ',') && highlightedIdx >= 0 && options.length > 0) {
+                e.preventDefault();
+                selectSuggestion(options[highlightedIdx].textContent);
+                return;
+            }
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                var val = tagInput.value.trim().replace(/,/g, '');
+                if (val && currentTags.indexOf(val) === -1) {
+                    currentTags.push(val);
+                    renderTags();
+                }
+                tagInput.value = '';
+                hideSuggestions();
+            }
+            if (e.key === 'Backspace' && tagInput.value === '' && currentTags.length) {
+                currentTags.pop();
+                renderTags();
+            }
+            if (e.key === 'Escape') {
+                hideSuggestions();
+            }
+        });
+
+        tagInput.addEventListener('blur', function() {
+            // Delay to allow click on suggestion
+            setTimeout(function() { hideSuggestions(); }, 150);
+        });
+
+        function getAllExistingTags() {
+            var allTags = [];
+            entries.forEach(function(e) {
+                e.tags.forEach(function(t) {
+                    if (allTags.indexOf(t) === -1) allTags.push(t);
+                });
+            });
+            return allTags.sort();
+        }
+
+        function showTagSuggestions(query) {
+            highlightedIdx = -1;
+            if (!query) { hideSuggestions(); return; }
+            var allTags = getAllExistingTags();
+            var matches = allTags.filter(function(t) {
+                return t.toLowerCase().indexOf(query.toLowerCase()) !== -1
+                    && currentTags.indexOf(t) === -1;
+            });
+            if (matches.length === 0) { hideSuggestions(); return; }
+
+            tagSuggestions.innerHTML = '';
+            matches.forEach(function(tag) {
+                var div = document.createElement('div');
+                div.className = 'tag-option';
+                div.textContent = tag;
+                div.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    selectSuggestion(tag);
+                });
+                tagSuggestions.appendChild(div);
+            });
+            tagSuggestions.classList.add('show');
+        }
+
+        function hideSuggestions() {
+            tagSuggestions.classList.remove('show');
+            tagSuggestions.innerHTML = '';
+            highlightedIdx = -1;
+        }
+
+        function selectSuggestion(tag) {
+            if (currentTags.indexOf(tag) === -1) {
+                currentTags.push(tag);
+                renderTags();
+            }
+            tagInput.value = '';
+            hideSuggestions();
+            tagInput.focus();
+        }
+
+        function updateHighlight(options) {
+            options.forEach(function(opt, i) {
+                opt.classList.toggle('highlighted', i === highlightedIdx);
+            });
+        }
+
+        function renderTags() {
+            var chips = tagsContainer.querySelectorAll('.tag-chip');
+            chips.forEach(function(c) { c.remove(); });
+            currentTags.forEach(function(tag, i) {
+                var chip = document.createElement('span');
+                chip.className = 'tag-chip';
+                chip.innerHTML = tag + ' <button onclick="removeTag(' + i + ')">&times;</button>';
+                tagsContainer.insertBefore(chip, tagInput);
+            });
+        }
+
+        function removeTag(idx) {
+            currentTags.splice(idx, 1);
+            renderTags();
+        }
+
+        function resetForm() {
+            editingId = null;
+            textInput.value = '';
+            document.getElementById('remarkInput').value = '';
+            currentTags = [];
+            renderTags();
+            clearPaste({ stopPropagation: function(){} });
+            textInput.style.display = '';
+            document.querySelector('.btn-save').textContent = 'Save Entry';
+            document.getElementById('pageAddTitle').textContent = 'Add New Entry';
+            document.getElementById('resetBar').style.display = 'none';
+        }
+        // --- Save Entry ---
+        function saveEntry() {
+            var text = textInput.value.trim();
+            var remark = document.getElementById('remarkInput').value.trim();
+
+            if (!text && !imageData) {
+                showToast('Please enter a value or paste an image');
+                return;
+            }
+
+            if (editingId) {
+                // Update existing entry
+                var idx = entries.findIndex(function(e) { return e.id === editingId; });
+                if (idx !== -1) {
+                    entries[idx].type = imageData ? 'image' : 'text';
+                    entries[idx].value = imageData ? imageData : text;
+                    entries[idx].tags = currentTags.slice();
+                    entries[idx].remark = remark;
+                }
+                editingId = null;
+                document.querySelector('.btn-save').textContent = 'Save Entry';
+                document.getElementById('pageAddTitle').textContent = 'Add New Entry';
+                document.getElementById('resetBar').style.display = 'none';
+                showToast('Entry updated!');
+            } else {
+                // Create new entry
+                var entry = {
+                    id: Date.now(),
+                    type: imageData ? 'image' : 'text',
+                    value: imageData ? imageData : text,
+                    tags: currentTags.slice(),
+                    remark: remark,
+                    created: new Date().toISOString()
+                };
+                entries.unshift(entry);
+                showToast('Entry saved!');
+            }
+
+            saveToStorage();
+            // Reset form
+            textInput.value = '';
+            document.getElementById('remarkInput').value = '';
+            currentTags = [];
+            renderTags();
+            clearPaste({ stopPropagation: function(){} });
+            textInput.style.display = '';
+        }
+
+        function saveToStorage() {
+            localStorage.setItem('fastcopy_entries', JSON.stringify(entries));
+        }
+        // --- List Page ---
+        function populateTagFilter() {
+            var allTags = [];
+            entries.forEach(function(e) {
+                e.tags.forEach(function(t) {
+                    if (allTags.indexOf(t) === -1) allTags.push(t);
+                });
+            });
+            var sel = document.getElementById('tagFilter');
+            var current = sel.value;
+            sel.innerHTML = '<option value="">All Tags</option>';
+            allTags.sort().forEach(function(t) {
+                var opt = document.createElement('option');
+                opt.value = t; opt.textContent = t;
+                sel.appendChild(opt);
+            });
+            sel.value = current;
+        }
+
+        function renderList() {
+            var search = document.getElementById('searchInput').value.toLowerCase();
+            var tagF = document.getElementById('tagFilter').value;
+            var list = document.getElementById('entryList');
+            list.innerHTML = '';
+
+            var filtered = entries.filter(function(e) {
+                var matchSearch = true;
+                if (search) {
+                    var inValue = e.type === 'text' && e.value.toLowerCase().indexOf(search) !== -1;
+                    var inRemark = e.remark && e.remark.toLowerCase().indexOf(search) !== -1;
+                    matchSearch = inValue || inRemark;
+                }
+                var matchTag = !tagF || e.tags.indexOf(tagF) !== -1;
+                return matchSearch && matchTag;
+            });
+            if (filtered.length === 0) {
+                list.innerHTML = '<div class="empty-state">No entries found.</div>';
+                return;
+            }
+
+            filtered.forEach(function(entry) {
+                var card = document.createElement('div');
+                card.className = 'entry-card';
+
+                var valueHtml = '';
+                if (entry.type === 'image') {
+                    valueHtml = '<div class="entry-value"><img src="' + entry.value + '" alt="image"></div>';
+                } else {
+                    valueHtml = '<div class="entry-value">' + escapeHtml(entry.value) + '</div>';
+                }
+
+                var tagsHtml = '';
+                if (entry.tags.length) {
+                    tagsHtml = '<div class="entry-tags">' +
+                        entry.tags.map(function(t) { return '<span class="entry-tag">' + escapeHtml(t) + '</span>'; }).join('') +
+                        '</div>';
+                }
+
+                var remarkHtml = entry.remark ? '<div class="entry-remark">' + escapeHtml(entry.remark) + '</div>' : '';
+
+                card.innerHTML = valueHtml + tagsHtml + remarkHtml +
+                    '<div class="entry-actions"><button title="Edit" onclick="editEntry(' + entry.id + ', event)">&#9998;</button><button title="Delete" onclick="deleteEntry(' + entry.id + ', event)">&#128465;</button></div>' +
+                    '<span class="copy-hint">click to copy</span>';
+
+                card.addEventListener('click', function() { copyEntry(entry, card); });
+                list.appendChild(card);
+            });
+        }
+        function copyEntry(entry, card) {
+            if (entry.type === 'text') {
+                navigator.clipboard.writeText(entry.value).then(function() {
+                    showToast('Copied: ' + entry.value.substring(0, 40) + (entry.value.length > 40 ? '...' : ''));
+                    card.classList.add('copied');
+                    setTimeout(function() { card.classList.remove('copied'); }, 1500);
+                }).catch(function() {
+                    var ta = document.createElement('textarea');
+                    ta.value = entry.value;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    showToast('Copied!');
+                });
+            } else {
+                // For images, copy as blob if supported
+                fetch(entry.value).then(function(r) { return r.blob(); }).then(function(blob) {
+                    var item = new ClipboardItem({ [blob.type]: blob });
+                    navigator.clipboard.write([item]).then(function() {
+                        showToast('Image copied to clipboard!');
+                        card.classList.add('copied');
+                        setTimeout(function() { card.classList.remove('copied'); }, 1500);
+                    });
+                }).catch(function() {
+                    showToast('Cannot copy image in this browser');
+                });
+            }
+        }
+
+        function deleteEntry(id, e) {
+            e.stopPropagation();
+            entries = entries.filter(function(en) { return en.id !== id; });
+            saveToStorage();
+            populateTagFilter();
+            renderList();
+            showToast('Entry deleted');
+        }
+
+        function editEntry(id, e) {
+            e.stopPropagation();
+            var entry = entries.find(function(en) { return en.id === id; });
+            if (!entry) return;
+
+            // Switch to Add page
+            showPage('add');
+            editingId = id;
+
+            // Populate form with existing data
+            if (entry.type === 'image') {
+                imageData = entry.value;
+                pasteArea.querySelector('.paste-hint').style.display = 'none';
+                var existing = pasteArea.querySelector('img');
+                if (existing) existing.remove();
+                var img = document.createElement('img');
+                img.src = imageData;
+                pasteArea.appendChild(img);
+                document.getElementById('clearBtn').style.display = 'block';
+                textInput.style.display = 'none';
+                textInput.value = '';
+            } else {
+                clearPaste({ stopPropagation: function(){} });
+                textInput.style.display = '';
+                textInput.value = entry.value;
+            }
+
+            // Populate tags
+            currentTags = entry.tags.slice();
+            renderTags();
+
+            // Populate remark
+            document.getElementById('remarkInput').value = entry.remark || '';
+
+            // Update button text and title
+            document.querySelector('.btn-save').textContent = 'Update Entry';
+            document.getElementById('pageAddTitle').textContent = 'Edit Entry';
+            document.getElementById('resetBar').style.display = 'block';
+        }
+        // --- Import / Export ---
+        function exportData() {
+            var blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'fastcopy_data_' + new Date().toISOString().slice(0,10) + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Exported ' + entries.length + ' entries');
+        }
+
+        function importData(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    var imported = JSON.parse(ev.target.result);
+                    if (Array.isArray(imported)) {
+                        entries = imported.concat(entries);
+                        saveToStorage();
+                        populateTagFilter();
+                        renderList();
+                        showToast('Imported ' + imported.length + ' entries');
+                    } else {
+                        showToast('Invalid file format');
+                    }
+                } catch (err) {
+                    showToast('Error reading file');
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        }
+
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Init: render list on load (or handle URL param)
+        var urlParams = new URLSearchParams(window.location.search);
+        var startPage = urlParams.get('page');
+        if (startPage === 'add') {
+            showPage('add');
+        } else {
+            populateTagFilter();
+            renderList();
+        }
+    </script>
+</body>
+</html>

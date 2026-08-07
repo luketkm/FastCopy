@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ID Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255,255,255,0.95); border-radius: 16px; padding: 32px;
+            max-width: 700px; width: 100%; margin: 0 auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h2 { color: #1a1a2e; margin-bottom: 20px; font-size: 1.4rem; }
+        .subtitle {
+            color: #666; margin-bottom: 24px; font-size: 0.9rem;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block; font-size: 0.85rem; color: #333;
+            font-weight: 500; margin-bottom: 6px;
+        }
+        .form-group select, .form-group input[type="number"] {
+            width: 100%; padding: 8px 12px; border: 2px solid #e0e0e0;
+            border-radius: 8px; font-size: 0.9rem; background: #fff;
+            transition: border-color 0.2s;
+        }
+        .form-group select:focus, .form-group input[type="number"]:focus {
+            outline: none; border-color: #2c5364;
+        }
+        .dob-row { display: flex; gap: 8px; }
+        .dob-row > div { flex: 1; }
+        .options-row { display: flex; gap: 12px; flex-wrap: wrap; }
+        .options-row > div { flex: 1; min-width: 140px; }
+        .btn-generate {
+            width: 100%; padding: 14px; border: none; border-radius: 10px;
+            background: linear-gradient(135deg, #2c5364, #203a43);
+            color: #fff; font-size: 1rem; font-weight: 600;
+            cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+            margin-top: 8px;
+        }
+        .btn-generate:hover {
+            transform: translateY(-2px); box-shadow: 0 6px 20px rgba(44,83,100,0.4);
+        }
+        .btn-generate:active { transform: translateY(0); }
+        .result-section { margin-top: 24px; }
+        .result-label {
+            font-size: 0.8rem; color: #888; text-transform: uppercase;
+            letter-spacing: 1px; margin-bottom: 8px;
+        }
+        .result-box {
+            display: flex; align-items: center; justify-content: space-between;
+            background: #f9fafb; border: 2px solid #e8e8e8; border-radius: 10px;
+            padding: 14px 18px; cursor: pointer; transition: all 0.2s;
+        }
+        .result-box:hover { border-color: #2c5364; background: #f0f7fa; }
+        .result-box.copied { border-color: #27ae60; background: #eafaf1; }
+        .nric-display {
+            font-size: 1.5rem; font-weight: 700; color: #1a1a2e;
+            letter-spacing: 2px; font-family: 'Courier New', monospace;
+        }
+        .copy-icon { color: #888; font-size: 1.2rem; transition: color 0.2s; }
+        .result-box:hover .copy-icon { color: #2c5364; }
+        .result-box.copied .copy-icon { color: #27ae60; }
+        .history { margin-top: 20px; }
+        .history-title {
+            font-size: 0.8rem; color: #888; text-transform: uppercase;
+            letter-spacing: 1px; margin-bottom: 8px;
+        }
+        .history-list { list-style: none; max-height: 180px; overflow-y: auto; }
+        .history-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 14px; background: #f9fafb; border: 1px solid #e8e8e8;
+            border-radius: 8px; margin-bottom: 4px; cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            font-family: 'Courier New', monospace; font-size: 0.95rem; color: #333;
+        }
+        .history-item:hover { background: #f0f7fa; border-color: #2c5364; }
+        .history-item .copy-hint {
+            font-size: 0.7rem; color: #aaa; font-family: 'Segoe UI', sans-serif;
+        }
+        .disclaimer {
+            margin-top: 20px; padding: 10px; background: #fff3cd;
+            border-radius: 8px; font-size: 0.75rem; color: #856404; text-align: center;
+        }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #27ae60; color: #fff; padding: 12px 24px;
+            border-radius: 8px; font-size: 0.9rem; font-weight: 500;
+            opacity: 0; transition: transform 0.3s, opacity 0.3s;
+            pointer-events: none; z-index: 999;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    </style>
+</head>
+<body>
+    <script src="nav.js"></script>
+
+    <div class="container">
+        <h2>ID Generator</h2>
+        <p class="subtitle">Generate random Malaysian NRIC for testing</p>
+
+        <div class="form-group">
+            <label>Date of Birth (leave empty for random)</label>
+            <div class="dob-row">
+                <div><input type="number" id="dobYear" placeholder="Year" min="1940" max="2005"></div>
+                <div><input type="number" id="dobMonth" placeholder="Month" min="1" max="12"></div>
+                <div><input type="number" id="dobDay" placeholder="Day" min="1" max="31"></div>
+            </div>
+        </div>
+        <div class="options-row">
+            <div class="form-group">
+                <label for="gender">Gender</label>
+                <select id="gender">
+                    <option value="random">Random</option>
+                    <option value="male">Male (Odd)</option>
+                    <option value="female">Female (Even)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="state">State</label>
+                <select id="state">
+                    <option value="random">Random</option>
+                </select>
+            </div>
+        </div>
+
+        <button class="btn-generate" id="generateBtn">Generate NRIC</button>
+
+        <div class="result-section">
+            <div class="result-label">Generated NRIC (click to copy)</div>
+            <div class="result-box" id="resultBox" role="button" aria-label="Click to copy NRIC" tabindex="0">
+                <span class="nric-display" id="nricDisplay">------‑----</span>
+                <span class="copy-icon" aria-hidden="true">&#128203;</span>
+            </div>
+        </div>
+
+        <div class="history">
+            <div class="history-title">History (click to copy)</div>
+            <ul class="history-list" id="historyList"></ul>
+        </div>
+
+        <div class="disclaimer">
+            &#9888;&#65039; For testing and development purposes only. Do not use for illegal activities.
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Copied to clipboard!</div>
+    <script>
+        const stateCodes = [
+            { code: '01', name: 'Johor' },
+            { code: '02', name: 'Kedah' },
+            { code: '03', name: 'Kelantan' },
+            { code: '04', name: 'Melaka' },
+            { code: '05', name: 'Negeri Sembilan' },
+            { code: '06', name: 'Pahang' },
+            { code: '07', name: 'Pulau Pinang' },
+            { code: '08', name: 'Perak' },
+            { code: '09', name: 'Perlis' },
+            { code: '10', name: 'Selangor' },
+            { code: '11', name: 'Terengganu' },
+            { code: '12', name: 'Sabah' },
+            { code: '13', name: 'Sarawak' },
+            { code: '14', name: 'W.P. Kuala Lumpur' },
+            { code: '15', name: 'W.P. Labuan' },
+            { code: '16', name: 'W.P. Putrajaya' },
+        ];
+
+        var stateSelect = document.getElementById('state');
+        stateCodes.forEach(function(s) {
+            var opt = document.createElement('option');
+            opt.value = s.code;
+            opt.textContent = s.code + ' - ' + s.name;
+            stateSelect.appendChild(opt);
+        });
+
+        var history = [];
+
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function padZero(num, len) {
+            return String(num).padStart(len, '0');
+        }
+        function generateNRIC() {
+            var yearInput = document.getElementById('dobYear').value;
+            var monthInput = document.getElementById('dobMonth').value;
+            var dayInput = document.getElementById('dobDay').value;
+
+            var year = yearInput ? parseInt(yearInput, 10) : randomInt(1940, 2005);
+            var month = monthInput ? parseInt(monthInput, 10) : randomInt(1, 12);
+            var maxDay = new Date(year, month, 0).getDate();
+            var day = dayInput ? Math.min(parseInt(dayInput, 10), maxDay) : randomInt(1, maxDay);
+
+            var yy = padZero(year % 100, 2);
+            var mm = padZero(month, 2);
+            var dd = padZero(day, 2);
+
+            var genderVal = document.getElementById('gender').value;
+            var stateVal = document.getElementById('state').value;
+
+            var pb = (stateVal === 'random')
+                ? stateCodes[randomInt(0, stateCodes.length - 1)].code
+                : stateVal;
+
+            var lastFour;
+            if (genderVal === 'male') {
+                lastFour = padZero(randomInt(0, 499) * 2 + 1, 4);
+            } else if (genderVal === 'female') {
+                lastFour = padZero(randomInt(1, 499) * 2, 4);
+            } else {
+                lastFour = padZero(randomInt(1, 9999), 4);
+            }
+
+            return yy + mm + dd + '-' + pb + '-' + lastFour;
+        }
+
+        function showToast(msg) {
+            var t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(function() { t.classList.remove('show'); }, 2000);
+        }
+        function copyToClipboard(text) {
+            var plain = text.replace(/-/g, '');
+            navigator.clipboard.writeText(plain).then(function() {
+                showToast('Copied: ' + plain);
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = plain;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Copied: ' + plain);
+            });
+        }
+
+        function addToHistory(nric) {
+            history.unshift(nric);
+            if (history.length > 10) history.pop();
+            renderHistory();
+        }
+
+        function renderHistory() {
+            var list = document.getElementById('historyList');
+            list.innerHTML = '';
+            history.forEach(function(nric) {
+                var li = document.createElement('li');
+                li.className = 'history-item';
+                li.innerHTML = '<span>' + nric + '</span><span class="copy-hint">click to copy</span>';
+                li.addEventListener('click', function() { copyToClipboard(nric); });
+                list.appendChild(li);
+            });
+        }
+
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            var nric = generateNRIC();
+            document.getElementById('nricDisplay').textContent = nric;
+            addToHistory(nric);
+        });
+
+        var resultBox = document.getElementById('resultBox');
+        resultBox.addEventListener('click', function() {
+            var nric = document.getElementById('nricDisplay').textContent;
+            if (nric && nric.indexOf('-') !== -1) {
+                copyToClipboard(nric);
+                resultBox.classList.add('copied');
+                setTimeout(function() { resultBox.classList.remove('copied'); }, 1500);
+            }
+        });
+
+        resultBox.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resultBox.click(); }
+        });
+
+        // Generate one on load
+        document.getElementById('generateBtn').click();
+    </script>
+</body>
+</html>
