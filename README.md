@@ -91,6 +91,16 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Changelog
 
+### v1.0.2
+- ID Generator: added Age input field (calculates birth year from age)
+- ID Generator: added "Number to generate" field for batch generation
+- ID Generator: Copy All button to copy entire history to clipboard
+- ID Generator: Clear button to reset history
+- ID Generator: Clear All Inputs button to reset form fields
+- ID Generator: history no longer capped at 10 items
+- ID Generator: page loads empty (no auto-generate on visit)
+- ID Generator: fixed history bug caused by `history` variable name conflict
+
 ### v1.0.1
 - Remark displayed below value as subtle label for better visual hierarchy
 - Pin/favourite entries to keep them at the top of the list

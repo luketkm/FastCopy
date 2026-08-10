@@ -73,7 +73,7 @@
             font-size: 0.8rem; color: #888; text-transform: uppercase;
             letter-spacing: 1px; margin-bottom: 8px;
         }
-        .history-list { list-style: none; max-height: 180px; overflow-y: auto; }
+        .history-list { list-style: none; max-height: 300px; overflow-y: auto; }
         .history-item {
             display: flex; align-items: center; justify-content: space-between;
             padding: 8px 14px; background: #f9fafb; border: 1px solid #e8e8e8;
@@ -108,6 +108,10 @@
         <p class="subtitle">Generate random Malaysian NRIC for testing</p>
 
         <div class="form-group">
+            <label>Age (overrides Year if filled)</label>
+            <input type="number" id="ageInput" placeholder="e.g. 30" min="1" max="120" style="width:100%; padding:8px 12px; border:2px solid #e0e0e0; border-radius:8px; font-size:0.9rem; background:#fff; transition:border-color 0.2s;">
+        </div>
+        <div class="form-group">
             <label>Date of Birth (leave empty for random)</label>
             <div class="dob-row">
                 <div><input type="number" id="dobYear" placeholder="Year" min="1940" max="2005"></div>
@@ -130,20 +134,31 @@
                     <option value="random">Random</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label for="numSet">Number to generate</label>
+                <input type="number" id="numSet" value="1" min="1" max="50">
+            </div>
         </div>
 
         <button class="btn-generate" id="generateBtn">Generate NRIC</button>
+        <button id="clearBtn" style="width:100%; padding:10px; border:2px solid #e0e0e0; border-radius:10px; background:#fff; color:#888; font-size:0.85rem; font-weight:500; cursor:pointer; margin-top:8px; transition:all 0.2s;" onmouseover="this.style.borderColor='#e74c3c';this.style.color='#e74c3c'" onmouseout="this.style.borderColor='#e0e0e0';this.style.color='#888'">Clear All Inputs</button>
 
         <div class="result-section">
             <div class="result-label">Generated NRIC (click to copy)</div>
             <div class="result-box" id="resultBox" role="button" aria-label="Click to copy NRIC" tabindex="0">
-                <span class="nric-display" id="nricDisplay">------‑----</span>
+                <span class="nric-display" id="nricDisplay">-</span>
                 <span class="copy-icon" aria-hidden="true">&#128203;</span>
             </div>
         </div>
 
         <div class="history">
-            <div class="history-title">History (click to copy)</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                <span class="history-title" style="margin-bottom:0;">History (click to copy)</span>
+                <div style="display:flex; gap:6px;">
+                    <button id="copyAllBtn" style="padding:4px 10px; border:1px solid #2c5364; border-radius:6px; background:#fff; color:#2c5364; font-size:0.75rem; cursor:pointer; font-weight:500; transition:all 0.2s;">Copy All</button>
+                    <button id="clearHistoryBtn" style="padding:4px 10px; border:1px solid #e74c3c; border-radius:6px; background:#fff; color:#e74c3c; font-size:0.75rem; cursor:pointer; font-weight:500; transition:all 0.2s;">Clear</button>
+                </div>
+            </div>
             <ul class="history-list" id="historyList"></ul>
         </div>
 
@@ -181,7 +196,7 @@
             stateSelect.appendChild(opt);
         });
 
-        var history = [];
+        var nricHistory = [];
 
         function randomInt(min, max) {
             return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -191,11 +206,22 @@
             return String(num).padStart(len, '0');
         }
         function generateNRIC() {
+            var ageInput = document.getElementById('ageInput').value;
             var yearInput = document.getElementById('dobYear').value;
             var monthInput = document.getElementById('dobMonth').value;
             var dayInput = document.getElementById('dobDay').value;
 
-            var year = yearInput ? parseInt(yearInput, 10) : randomInt(1940, 2005);
+            // If age is provided, calculate birth year from age
+            var year;
+            if (ageInput) {
+                var currentYear = new Date().getFullYear();
+                year = currentYear - parseInt(ageInput, 10);
+            } else if (yearInput) {
+                year = parseInt(yearInput, 10);
+            } else {
+                year = randomInt(1940, 2005);
+            }
+
             var month = monthInput ? parseInt(monthInput, 10) : randomInt(1, 12);
             var maxDay = new Date(year, month, 0).getDate();
             var day = dayInput ? Math.min(parseInt(dayInput, 10), maxDay) : randomInt(1, maxDay);
@@ -245,15 +271,14 @@
         }
 
         function addToHistory(nric) {
-            history.unshift(nric);
-            if (history.length > 10) history.pop();
+            nricHistory.unshift(nric);
             renderHistory();
         }
 
         function renderHistory() {
             var list = document.getElementById('historyList');
             list.innerHTML = '';
-            history.forEach(function(nric) {
+            nricHistory.forEach(function(nric) {
                 var li = document.createElement('li');
                 li.className = 'history-item';
                 li.innerHTML = '<span>' + nric + '</span><span class="copy-hint">click to copy</span>';
@@ -263,9 +288,37 @@
         }
 
         document.getElementById('generateBtn').addEventListener('click', function() {
-            var nric = generateNRIC();
-            document.getElementById('nricDisplay').textContent = nric;
-            addToHistory(nric);
+            var numSet = parseInt(document.getElementById('numSet').value, 10) || 1;
+            var lastNric = '';
+            for (var i = 0; i < numSet; i++) {
+                lastNric = generateNRIC();
+                addToHistory(lastNric);
+            }
+            document.getElementById('nricDisplay').textContent = lastNric;
+        });
+
+        // Copy all history items
+        document.getElementById('copyAllBtn').addEventListener('click', function() {
+            if (nricHistory.length === 0) { showToast('No history to copy'); return; }
+            var allPlain = nricHistory.map(function(n) { return n.replace(/-/g, ''); }).join('\n');
+            navigator.clipboard.writeText(allPlain).then(function() {
+                showToast('Copied all ' + nricHistory.length + ' IDs');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = allPlain;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Copied all ' + nricHistory.length + ' IDs');
+            });
+        });
+
+        // Clear history
+        document.getElementById('clearHistoryBtn').addEventListener('click', function() {
+            nricHistory = [];
+            renderHistory();
+            showToast('History cleared');
         });
 
         var resultBox = document.getElementById('resultBox');
@@ -282,8 +335,15 @@
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resultBox.click(); }
         });
 
-        // Generate one on load
-        document.getElementById('generateBtn').click();
+        // Ready on load (no auto-generate)
+        document.getElementById('clearBtn').addEventListener('click', function() {
+            document.getElementById('ageInput').value = '';
+            document.getElementById('dobYear').value = '';
+            document.getElementById('dobMonth').value = '';
+            document.getElementById('dobDay').value = '';
+            document.getElementById('gender').value = 'random';
+            document.getElementById('state').value = 'random';
+        });
     </script>
 </body>
 </html>
