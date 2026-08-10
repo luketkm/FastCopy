@@ -58,7 +58,7 @@
         .tags-container:focus-within { border-color: #2c5364; }
         .tag-chip {
             display: inline-flex; align-items: center; gap: 4px;
-            background: #2c5364; color: #fff; padding: 4px 10px;
+            background: #2c5364; color: #fff; padding: 4px 6px 4px 10px;
             border-radius: 20px; font-size: 0.8rem;
         }
         .tag-chip button {
@@ -66,6 +66,14 @@
             cursor: pointer; font-size: 1rem; line-height: 1;
         }
         .tag-chip button:hover { color: #fff; }
+        .tag-chip .color-pick {
+            width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%; cursor: pointer; padding: 0;
+            appearance: none; -webkit-appearance: none;
+            background: none; overflow: hidden;
+        }
+        .tag-chip .color-pick::-webkit-color-swatch-wrapper { padding: 0; }
+        .tag-chip .color-pick::-webkit-color-swatch { border: none; border-radius: 50%; }
         .tag-input {
             border: none; outline: none; font-size: 0.85rem;
             flex: 1; min-width: 80px; padding: 4px;
@@ -110,6 +118,18 @@
             padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px;
             font-size: 0.9rem; background: #fff; cursor: pointer;
         }
+        .tag-tabs {
+            display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
+        }
+        .tag-tabs button {
+            padding: 6px 14px; border: 2px solid #e0e0e0; border-radius: 20px;
+            background: #fff; font-size: 0.8rem; cursor: pointer;
+            font-weight: 500; transition: all 0.2s; color: #555;
+        }
+        .tag-tabs button:hover { border-color: #2c5364; color: #2c5364; }
+        .tag-tabs button.active {
+            background: #2c5364; color: #fff; border-color: #2c5364;
+        }
         .entry-list { display: flex; flex-direction: column; gap: 6px; }
         .entry-card {
             background: #f9fafb; border: 2px solid #e8e8e8; border-radius: 10px;
@@ -133,7 +153,18 @@
             border-radius: 12px; font-size: 0.7rem;
         }
         .entry-card .entry-remark {
-            color: #888; font-size: 0.8rem; margin-top: 6px; font-style: italic;
+            color: #888; font-size: 0.75rem; margin-top: 4px; font-weight: 400;
+            font-style: italic; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .entry-card.pinned {
+            border-color: #f39c12; background: #fef9e7;
+        }
+        .entry-card.pinned:hover {
+            border-color: #e67e22; background: #fdf2d0;
+        }
+        .entry-card .pin-indicator {
+            position: absolute; top: -1px; left: 12px; font-size: 0.7rem;
+            color: #f39c12; font-weight: 600;
         }
         .entry-card .entry-actions {
             position: absolute; top: 6px; right: 6px; display: flex; gap: 2px;
@@ -220,10 +251,8 @@
         </div>
         <div class="search-bar">
             <input type="text" id="searchInput" placeholder="Search value or remark..." oninput="renderList()">
-            <select id="tagFilter" onchange="renderList()">
-                <option value="">All Tags</option>
-            </select>
         </div>
+        <div class="tag-tabs" id="tagTabs"></div>
         <div class="entry-list" id="entryList">
             <div class="empty-state">No entries yet. Add one!</div>
         </div>
@@ -233,9 +262,19 @@
     <script>
         // --- State ---
         let entries = JSON.parse(localStorage.getItem('fastcopy_entries') || '[]');
+        let tagColors = JSON.parse(localStorage.getItem('fastcopy_tagcolors') || '{}');
         let currentTags = [];
         let imageData = null; // base64
         let editingId = null; // track if we're editing
+
+        function getTagColor(tag) {
+            return tagColors[tag] || '#2c5364';
+        }
+
+        function setTagColor(tag, color) {
+            tagColors[tag] = color;
+            localStorage.setItem('fastcopy_tagcolors', JSON.stringify(tagColors));
+        }
 
         // --- Page Navigation ---
         function showPage(page) {
@@ -431,7 +470,27 @@
             currentTags.forEach(function(tag, i) {
                 var chip = document.createElement('span');
                 chip.className = 'tag-chip';
-                chip.innerHTML = tag + ' <button onclick="removeTag(' + i + ')">&times;</button>';
+                chip.style.background = getTagColor(tag);
+
+                var label = document.createTextNode(tag + ' ');
+                chip.appendChild(label);
+
+                var colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.className = 'color-pick';
+                colorInput.value = getTagColor(tag);
+                colorInput.title = 'Pick tag color';
+                colorInput.addEventListener('input', function(e) {
+                    setTagColor(tag, e.target.value);
+                    chip.style.background = e.target.value;
+                });
+                chip.appendChild(colorInput);
+
+                var removeBtn = document.createElement('button');
+                removeBtn.innerHTML = '&times;';
+                removeBtn.setAttribute('onclick', 'removeTag(' + i + ')');
+                chip.appendChild(removeBtn);
+
                 tagsContainer.insertBefore(chip, tagInput);
             });
         }
@@ -505,6 +564,8 @@
             localStorage.setItem('fastcopy_entries', JSON.stringify(entries));
         }
         // --- List Page ---
+        var activeTagFilter = '';
+
         function populateTagFilter() {
             var allTags = [];
             entries.forEach(function(e) {
@@ -512,20 +573,47 @@
                     if (allTags.indexOf(t) === -1) allTags.push(t);
                 });
             });
-            var sel = document.getElementById('tagFilter');
-            var current = sel.value;
-            sel.innerHTML = '<option value="">All Tags</option>';
-            allTags.sort().forEach(function(t) {
-                var opt = document.createElement('option');
-                opt.value = t; opt.textContent = t;
-                sel.appendChild(opt);
+            allTags.sort();
+
+            var tabs = document.getElementById('tagTabs');
+            tabs.innerHTML = '';
+
+            // "All" tab
+            var allBtn = document.createElement('button');
+            allBtn.textContent = 'All';
+            allBtn.className = activeTagFilter === '' ? 'active' : '';
+            allBtn.addEventListener('click', function() {
+                activeTagFilter = '';
+                populateTagFilter();
+                renderList();
             });
-            sel.value = current;
+            tabs.appendChild(allBtn);
+
+            // Tag tabs
+            allTags.forEach(function(tag) {
+                var btn = document.createElement('button');
+                btn.textContent = tag;
+                if (activeTagFilter === tag) {
+                    btn.className = 'active';
+                    btn.style.background = getTagColor(tag);
+                    btn.style.borderColor = getTagColor(tag);
+                    btn.style.color = '#fff';
+                } else {
+                    btn.style.borderColor = getTagColor(tag);
+                    btn.style.color = getTagColor(tag);
+                }
+                btn.addEventListener('click', function() {
+                    activeTagFilter = tag;
+                    populateTagFilter();
+                    renderList();
+                });
+                tabs.appendChild(btn);
+            });
         }
 
         function renderList() {
             var search = document.getElementById('searchInput').value.toLowerCase();
-            var tagF = document.getElementById('tagFilter').value;
+            var tagF = activeTagFilter;
             var list = document.getElementById('entryList');
             list.innerHTML = '';
 
@@ -544,9 +632,19 @@
                 return;
             }
 
+            // Sort: pinned first
+            filtered.sort(function(a, b) {
+                var aPinned = a.pinned ? 1 : 0;
+                var bPinned = b.pinned ? 1 : 0;
+                return bPinned - aPinned;
+            });
+
             filtered.forEach(function(entry) {
                 var card = document.createElement('div');
-                card.className = 'entry-card';
+                card.className = 'entry-card' + (entry.pinned ? ' pinned' : '');
+
+                // Remark as title (above value)
+                var remarkHtml = entry.remark ? '<div class="entry-remark">' + escapeHtml(entry.remark) + '</div>' : '';
 
                 var valueHtml = '';
                 if (entry.type === 'image') {
@@ -558,14 +656,16 @@
                 var tagsHtml = '';
                 if (entry.tags.length) {
                     tagsHtml = '<div class="entry-tags">' +
-                        entry.tags.map(function(t) { return '<span class="entry-tag">' + escapeHtml(t) + '</span>'; }).join('') +
+                        entry.tags.map(function(t) { return '<span class="entry-tag" style="background:' + getTagColor(t) + '">' + escapeHtml(t) + '</span>'; }).join('') +
                         '</div>';
                 }
 
-                var remarkHtml = entry.remark ? '<div class="entry-remark">' + escapeHtml(entry.remark) + '</div>' : '';
+                var pinIcon = entry.pinned ? '&#9733;' : '&#9734;';
+                var pinTitle = entry.pinned ? 'Unpin' : 'Pin to top';
 
-                card.innerHTML = valueHtml + tagsHtml + remarkHtml +
-                    '<div class="entry-actions"><button title="Edit" onclick="editEntry(' + entry.id + ', event)">&#9998;</button><button title="Delete" onclick="deleteEntry(' + entry.id + ', event)">&#128465;</button></div>' +
+                card.innerHTML = (entry.pinned ? '<span class="pin-indicator">&#128204; pinned</span>' : '') +
+                    valueHtml + remarkHtml + tagsHtml +
+                    '<div class="entry-actions"><button title="' + pinTitle + '" onclick="togglePin(' + entry.id + ', event)">' + pinIcon + '</button><button title="Edit" onclick="editEntry(' + entry.id + ', event)">&#9998;</button><button title="Delete" onclick="deleteEntry(' + entry.id + ', event)">&#128465;</button></div>' +
                     '<span class="copy-hint">click to copy</span>';
 
                 card.addEventListener('click', function() { copyEntry(entry, card); });
@@ -609,6 +709,17 @@
             populateTagFilter();
             renderList();
             showToast('Entry deleted');
+        }
+
+        function togglePin(id, e) {
+            e.stopPropagation();
+            var entry = entries.find(function(en) { return en.id === id; });
+            if (entry) {
+                entry.pinned = !entry.pinned;
+                saveToStorage();
+                renderList();
+                showToast(entry.pinned ? 'Pinned to top' : 'Unpinned');
+            }
         }
 
         function editEntry(id, e) {
