@@ -566,6 +566,16 @@
         // --- List Page ---
         var activeTagFilter = '';
 
+        function updateUrlTag(tag) {
+            var url = new URL(window.location);
+            if (tag) {
+                url.searchParams.set('tag', tag);
+            } else {
+                url.searchParams.delete('tag');
+            }
+            history.replaceState(null, '', url.toString());
+        }
+
         function populateTagFilter() {
             var allTags = [];
             entries.forEach(function(e) {
@@ -584,6 +594,7 @@
             allBtn.className = activeTagFilter === '' ? 'active' : '';
             allBtn.addEventListener('click', function() {
                 activeTagFilter = '';
+                updateUrlTag('');
                 populateTagFilter();
                 renderList();
             });
@@ -604,6 +615,7 @@
                 }
                 btn.addEventListener('click', function() {
                     activeTagFilter = tag;
+                    updateUrlTag(tag);
                     populateTagFilter();
                     renderList();
                 });
@@ -806,6 +818,10 @@
         // Init: render list on load (or handle URL param)
         var urlParams = new URLSearchParams(window.location.search);
         var startPage = urlParams.get('page');
+        var startTag = urlParams.get('tag');
+        if (startTag) {
+            activeTagFilter = startTag;
+        }
         if (startPage === 'add') {
             showPage('add');
         } else {
