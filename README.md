@@ -91,6 +91,12 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Changelog
 
+### v1.0.4
+- FastCopy: export JSON now includes tag colours so colours are preserved on import
+- FastCopy: import detects duplicates by entry ID and overwrites instead of creating duplicates
+- FastCopy: import supports both new format and legacy plain-array format
+- FastCopy: import toast now shows breakdown of new vs updated entries
+
 ### v1.0.3
 - FastCopy: tag filter now updates URL with `?tag=` parameter (e.g. `FastCopy.html?tag=AlphaSAT`)
 - FastCopy: bookmarkable filtered views — visit a URL with `?tag=` to load pre-filtered list

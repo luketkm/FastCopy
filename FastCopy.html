@@ -775,7 +775,11 @@
         }
         // --- Import / Export ---
         function exportData() {
-            var blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
+            var exportObj = {
+                entries: entries,
+                tagColors: tagColors
+            };
+            var blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
             var url = URL.createObjectURL(blob);
             var a = document.createElement('a');
             a.href = url;
@@ -792,15 +796,46 @@
             reader.onload = function(ev) {
                 try {
                     var imported = JSON.parse(ev.target.result);
+                    // Support both new format {entries, tagColors} and legacy array format
+                    var importedEntries;
+                    var importedColors;
                     if (Array.isArray(imported)) {
-                        entries = imported.concat(entries);
-                        saveToStorage();
-                        populateTagFilter();
-                        renderList();
-                        showToast('Imported ' + imported.length + ' entries');
+                        // Legacy format: plain array of entries
+                        importedEntries = imported;
+                        importedColors = {};
+                    } else if (imported && Array.isArray(imported.entries)) {
+                        // New format with tag colors
+                        importedEntries = imported.entries;
+                        importedColors = imported.tagColors || {};
                     } else {
                         showToast('Invalid file format');
+                        return;
                     }
+                    // Build a map of existing entry IDs for quick lookup
+                    var existingMap = {};
+                    entries.forEach(function(ent, idx) { existingMap[ent.id] = idx; });
+                    var newCount = 0;
+                    var updatedCount = 0;
+                    importedEntries.forEach(function(imp) {
+                        if (existingMap.hasOwnProperty(imp.id)) {
+                            // Duplicate found — overwrite the old entry with the imported one
+                            entries[existingMap[imp.id]] = imp;
+                            updatedCount++;
+                        } else {
+                            // New entry — add to the front
+                            entries.unshift(imp);
+                            newCount++;
+                        }
+                    });
+                    // Merge imported tag colors (imported values overwrite existing)
+                    Object.keys(importedColors).forEach(function(tag) {
+                        tagColors[tag] = importedColors[tag];
+                    });
+                    localStorage.setItem('fastcopy_tagcolors', JSON.stringify(tagColors));
+                    saveToStorage();
+                    populateTagFilter();
+                    renderList();
+                    showToast('Imported: ' + newCount + ' new, ' + updatedCount + ' updated');
                 } catch (err) {
                     showToast('Error reading file');
                 }
