@@ -63,6 +63,43 @@ Generate valid-format Malaysian IC numbers with configurable options for QA and 
 
 ---
 
+### BRN Generator (BRNGenerator.html)
+
+A random Malaysian SSM Business Registration Number (BRN) generator for testing purposes.
+
+**Purpose:**  
+Generate valid-format Malaysian business registration numbers — both the new 12-digit SSM format and the legacy (pre 11 Oct 2019) format — for QA and development testing.
+
+**Features:**
+- Generate **New Format** (12-digit) numbers: `YYYY` + entity type code + 6-digit sequence
+- Generate **Old Format** numbers: company style (`1312525-A`) or sole prop/partnership style (`0012345678-P`)
+- Generate **Both** — new number with the old number in brackets (e.g. `201901000005 (1312525-A)`)
+- Entity type selection (01 Local Company, 02 Foreign Company, 03 Business, 04 Local LLP, 05 Foreign LLP, 06 Professional LLP)
+- Optional registration year (empty = random, 2019 onward)
+- Batch generation with "Number to generate" field
+- Click to copy, Copy All, and Clear history
+
+**Entity Type Codes (new format):**
+
+| Code | Entity Type |
+|------|-------------|
+| 01 | Local Company |
+| 02 | Foreign Company |
+| 03 | Business (Sole Prop / Partnership) |
+| 04 | Local LLP |
+| 05 | Foreign LLP |
+| 06 | Professional LLP |
+
+**How to use:**
+1. Open `BRNGenerator.html` in your browser
+2. Choose the format (New, Old, or Both)
+3. Select entity type and optional year (new format), or old entity style (old format)
+4. Set how many to generate
+5. Click **Generate BRN**
+6. Click the result box or any history item to copy
+
+---
+
 ## Shared Navigation (nav.js)
 
 A shared JavaScript file that injects a consistent sticky navigation bar across all tool pages. Edit `nav.js` once to update navigation on all pages.
@@ -74,6 +111,7 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 ```
 ├── FastCopy.html     # Clipboard cache utility
 ├── IDGenerator.html  # Malaysian NRIC generator
+├── BRNGenerator.html # Malaysian SSM BRN generator
 ├── nav.js            # Shared navigation bar
 ├── .gitignore        # Git ignore rules
 └── README.md         # This file
@@ -90,6 +128,12 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 ---
 
 ## Changelog
+
+### v1.0.5
+- New tool: BRN Generator (`BRNGenerator.html`) for Malaysian SSM Business Registration Numbers
+- BRN Generator: new 12-digit format, old format, and combined "New (Old)" output
+- BRN Generator: entity type codes, optional registration year, batch generation, copy/history
+- Added BRN Generator to shared navigation bar
 
 ### v1.0.4
 - FastCopy: export JSON now includes tag colours so colours are preserved on import

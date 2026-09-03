@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BRN Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255,255,255,0.95); border-radius: 16px; padding: 32px;
+            max-width: 700px; width: 100%; margin: 0 auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h2 { color: #1a1a2e; margin-bottom: 20px; font-size: 1.4rem; }
+        .subtitle {
+            color: #666; margin-bottom: 24px; font-size: 0.9rem;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block; font-size: 0.85rem; color: #333;
+            font-weight: 500; margin-bottom: 6px;
+        }
+        .form-group select, .form-group input[type="number"] {
+            width: 100%; padding: 8px 12px; border: 2px solid #e0e0e0;
+            border-radius: 8px; font-size: 0.9rem; background: #fff;
+            transition: border-color 0.2s;
+        }
+        .form-group select:focus, .form-group input[type="number"]:focus {
+            outline: none; border-color: #2c5364;
+        }
+        .options-row { display: flex; gap: 12px; flex-wrap: wrap; }
+        .options-row > div { flex: 1; min-width: 140px; }
+        .btn-generate {
+            width: 100%; padding: 14px; border: none; border-radius: 10px;
+            background: linear-gradient(135deg, #2c5364, #203a43);
+            color: #fff; font-size: 1rem; font-weight: 600;
+            cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+            margin-top: 8px;
+        }
+        .btn-generate:hover {
+            transform: translateY(-2px); box-shadow: 0 6px 20px rgba(44,83,100,0.4);
+        }
+        .btn-generate:active { transform: translateY(0); }
+        .result-section { margin-top: 24px; }
+        .result-label {
+            font-size: 0.8rem; color: #888; text-transform: uppercase;
+            letter-spacing: 1px; margin-bottom: 8px;
+        }
+        .result-box {
+            display: flex; align-items: center; justify-content: space-between;
+            background: #f9fafb; border: 2px solid #e8e8e8; border-radius: 10px;
+            padding: 14px 18px; cursor: pointer; transition: all 0.2s;
+        }
+        .result-box:hover { border-color: #2c5364; background: #f0f7fa; }
+        .result-box.copied { border-color: #27ae60; background: #eafaf1; }
+        .brn-display {
+            font-size: 1.4rem; font-weight: 700; color: #1a1a2e;
+            letter-spacing: 1px; font-family: 'Courier New', monospace;
+            word-break: break-all;
+        }
+        .copy-icon { color: #888; font-size: 1.2rem; transition: color 0.2s; flex-shrink: 0; margin-left: 12px; }
+        .result-box:hover .copy-icon { color: #2c5364; }
+        .result-box.copied .copy-icon { color: #27ae60; }
+        .history { margin-top: 20px; }
+        .history-title {
+            font-size: 0.8rem; color: #888; text-transform: uppercase;
+            letter-spacing: 1px; margin-bottom: 8px;
+        }
+        .history-list { list-style: none; max-height: 300px; overflow-y: auto; }
+        .history-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 14px; background: #f9fafb; border: 1px solid #e8e8e8;
+            border-radius: 8px; margin-bottom: 4px; cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            font-family: 'Courier New', monospace; font-size: 0.95rem; color: #333;
+        }
+        .history-item:hover { background: #f0f7fa; border-color: #2c5364; }
+        .history-item .copy-hint {
+            font-size: 0.7rem; color: #aaa; font-family: 'Segoe UI', sans-serif;
+            flex-shrink: 0; margin-left: 12px;
+        }
+        .history-item .hist-val { word-break: break-all; }
+        .disclaimer {
+            margin-top: 20px; padding: 10px; background: #fff3cd;
+            border-radius: 8px; font-size: 0.75rem; color: #856404; text-align: center;
+        }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #27ae60; color: #fff; padding: 12px 24px;
+            border-radius: 8px; font-size: 0.9rem; font-weight: 500;
+            opacity: 0; transition: transform 0.3s, opacity 0.3s;
+            pointer-events: none; z-index: 999;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    </style>
+</head>
+<body>
+    <script src="nav.js"></script>
+
+    <div class="container">
+        <h2>BRN Generator</h2>
+        <p class="subtitle">Generate random Malaysian SSM Business Registration Numbers (new &amp; old format) for testing</p>
+
+        <div class="form-group">
+            <label for="format">Registration No. Format</label>
+            <select id="format">
+                <option value="new">New Format (12-digit, since 11 Oct 2019)</option>
+                <option value="old">Old Format (pre 11 Oct 2019)</option>
+                <option value="both">Both (New with Old in brackets)</option>
+            </select>
+        </div>
+
+        <div class="options-row">
+            <div class="form-group" id="entityGroup">
+                <label for="entityType">Entity Type</label>
+                <select id="entityType">
+                    <option value="random">Random</option>
+                    <option value="01">01 - Local Company</option>
+                    <option value="02">02 - Foreign Company</option>
+                    <option value="03">03 - Business (Sole Prop / Partnership)</option>
+                    <option value="04">04 - Local LLP</option>
+                    <option value="05">05 - Foreign LLP</option>
+                    <option value="06">06 - Professional LLP</option>
+                </select>
+            </div>
+            <div class="form-group" id="yearGroup">
+                <label for="regYear">Registration Year (empty = random)</label>
+                <input type="number" id="regYear" placeholder="e.g. 2022" min="2019" max="2026">
+            </div>
+        </div>
+
+        <div class="options-row">
+            <div class="form-group" id="oldTypeGroup" style="display:none;">
+                <label for="oldEntityType">Old Format Entity</label>
+                <select id="oldEntityType">
+                    <option value="random">Random</option>
+                    <option value="company">Company (Sdn Bhd / Berhad)</option>
+                    <option value="business">Sole Prop / Partnership</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="numSet">Number to generate</label>
+                <input type="number" id="numSet" value="1" min="1" max="50">
+            </div>
+        </div>
+
+        <button class="btn-generate" id="generateBtn">Generate BRN</button>
+        <button id="clearBtn" style="width:100%; padding:10px; border:2px solid #e0e0e0; border-radius:10px; background:#fff; color:#888; font-size:0.85rem; font-weight:500; cursor:pointer; margin-top:8px; transition:all 0.2s;" onmouseover="this.style.borderColor='#e74c3c';this.style.color='#e74c3c'" onmouseout="this.style.borderColor='#e0e0e0';this.style.color='#888'">Clear All Inputs</button>
+
+        <div class="result-section">
+            <div class="result-label">Generated BRN (click to copy)</div>
+            <div class="result-box" id="resultBox" role="button" aria-label="Click to copy BRN" tabindex="0">
+                <span class="brn-display" id="brnDisplay">-</span>
+                <span class="copy-icon" aria-hidden="true">&#128203;</span>
+            </div>
+        </div>
+
+        <div class="history">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                <span class="history-title" style="margin-bottom:0;">History (click to copy)</span>
+                <div style="display:flex; gap:6px;">
+                    <button id="copyAllBtn" style="padding:4px 10px; border:1px solid #2c5364; border-radius:6px; background:#fff; color:#2c5364; font-size:0.75rem; cursor:pointer; font-weight:500; transition:all 0.2s;">Copy All</button>
+                    <button id="clearHistoryBtn" style="padding:4px 10px; border:1px solid #e74c3c; border-radius:6px; background:#fff; color:#e74c3c; font-size:0.75rem; cursor:pointer; font-weight:500; transition:all 0.2s;">Clear</button>
+                </div>
+            </div>
+            <ul class="history-list" id="historyList"></ul>
+        </div>
+
+        <div class="disclaimer">
+            &#9888;&#65039; For testing and development purposes only. These are randomly generated, not real registration numbers. Do not use for illegal activities.
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Copied to clipboard!</div>
+    <script>
+        // Entity type codes for the new 12-digit format
+        var entityCodes = ['01', '02', '03', '04', '05', '06'];
+
+        // Old-format suffix letters used by SSM under the legacy numbering system
+        var oldSuffixLetters = ['A', 'D', 'H', 'K', 'M', 'P', 'T', 'U', 'V', 'W', 'X'];
+
+        var brnHistory = [];
+
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function padZero(num, len) {
+            return String(num).padStart(len, '0');
+        }
+
+        function randomFrom(arr) {
+            return arr[randomInt(0, arr.length - 1)];
+        }
+
+        // Generate a new 12-digit SSM registration number: YYYY TT NNNNNN
+        function generateNewBRN() {
+            var yearInput = document.getElementById('regYear').value;
+            var entityVal = document.getElementById('entityType').value;
+
+            var year;
+            if (yearInput) {
+                year = parseInt(yearInput, 10);
+            } else {
+                year = randomInt(2019, new Date().getFullYear());
+            }
+
+            var tt = (entityVal === 'random') ? randomFrom(entityCodes) : entityVal;
+            var seq = padZero(randomInt(1, 999999), 6);
+
+            return String(year) + tt + seq;
+        }
+
+        // Generate an old-format registration number
+        function generateOldBRN(forceType) {
+            var oldVal = forceType || document.getElementById('oldEntityType').value;
+            var type = oldVal;
+            if (type === 'random') {
+                type = (randomInt(0, 1) === 0) ? 'company' : 'business';
+            }
+
+            if (type === 'company') {
+                // Company: up to 7-digit running number + suffix letter, e.g. 1312525-A
+                var num = padZero(randomInt(1, 9999999), 7);
+                var suffix = randomFrom(oldSuffixLetters);
+                return num + '-' + suffix;
+            } else {
+                // Sole Prop / Partnership: 10-digit number + suffix letter, e.g. 0012345678-P
+                var num2 = padZero(randomInt(1, 9999999999), 10);
+                var suffix2 = randomFrom(oldSuffixLetters);
+                return num2 + '-' + suffix2;
+            }
+        }
+
+        // Map new-format entity code to a matching old-format type
+        function oldTypeForEntity(tt) {
+            // 03 = Business (Sole Prop / Partnership); everything else treated as company-like
+            return (tt === '03') ? 'business' : 'company';
+        }
+
+        function generateBRN() {
+            var format = document.getElementById('format').value;
+
+            if (format === 'old') {
+                return generateOldBRN();
+            }
+
+            var newBrn = generateNewBRN();
+
+            if (format === 'new') {
+                return newBrn;
+            }
+
+            // both: "New (Old)" — align old type with the new entity code where sensible
+            var tt = newBrn.substring(4, 6);
+            var oldBrn = generateOldBRN(oldTypeForEntity(tt));
+            return newBrn + ' (' + oldBrn + ')';
+        }
+
+        function showToast(msg) {
+            var t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(function() { t.classList.remove('show'); }, 2000);
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                showToast('Copied: ' + text);
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Copied: ' + text);
+            });
+        }
+
+        function addToHistory(brn) {
+            brnHistory.unshift(brn);
+            renderHistory();
+        }
+
+        function renderHistory() {
+            var list = document.getElementById('historyList');
+            list.innerHTML = '';
+            brnHistory.forEach(function(brn) {
+                var li = document.createElement('li');
+                li.className = 'history-item';
+                var valSpan = document.createElement('span');
+                valSpan.className = 'hist-val';
+                valSpan.textContent = brn;
+                var hintSpan = document.createElement('span');
+                hintSpan.className = 'copy-hint';
+                hintSpan.textContent = 'click to copy';
+                li.appendChild(valSpan);
+                li.appendChild(hintSpan);
+                li.addEventListener('click', function() { copyToClipboard(brn); });
+                list.appendChild(li);
+            });
+        }
+
+        // Show/hide relevant option groups based on selected format
+        function updateFieldVisibility() {
+            var format = document.getElementById('format').value;
+            var showNew = (format === 'new' || format === 'both');
+            var showOld = (format === 'old' || format === 'both');
+            document.getElementById('entityGroup').style.display = showNew ? '' : 'none';
+            document.getElementById('yearGroup').style.display = showNew ? '' : 'none';
+            document.getElementById('oldTypeGroup').style.display = showOld ? '' : 'none';
+        }
+
+        document.getElementById('format').addEventListener('change', updateFieldVisibility);
+        updateFieldVisibility();
+
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            var numSet = parseInt(document.getElementById('numSet').value, 10) || 1;
+            if (numSet < 1) numSet = 1;
+            if (numSet > 50) numSet = 50;
+            var lastBrn = '';
+            for (var i = 0; i < numSet; i++) {
+                lastBrn = generateBRN();
+                addToHistory(lastBrn);
+            }
+            document.getElementById('brnDisplay').textContent = lastBrn;
+        });
+
+        // Copy all history items
+        document.getElementById('copyAllBtn').addEventListener('click', function() {
+            if (brnHistory.length === 0) { showToast('No history to copy'); return; }
+            var allText = brnHistory.join('\n');
+            navigator.clipboard.writeText(allText).then(function() {
+                showToast('Copied all ' + brnHistory.length + ' BRNs');
+            }).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = allText;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Copied all ' + brnHistory.length + ' BRNs');
+            });
+        });
+
+        // Clear history
+        document.getElementById('clearHistoryBtn').addEventListener('click', function() {
+            brnHistory = [];
+            renderHistory();
+            showToast('History cleared');
+        });
+
+        var resultBox = document.getElementById('resultBox');
+        resultBox.addEventListener('click', function() {
+            var brn = document.getElementById('brnDisplay').textContent;
+            if (brn && brn !== '-') {
+                copyToClipboard(brn);
+                resultBox.classList.add('copied');
+                setTimeout(function() { resultBox.classList.remove('copied'); }, 1500);
+            }
+        });
+
+        resultBox.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); resultBox.click(); }
+        });
+
+        // Clear all inputs
+        document.getElementById('clearBtn').addEventListener('click', function() {
+            document.getElementById('format').value = 'new';
+            document.getElementById('entityType').value = 'random';
+            document.getElementById('regYear').value = '';
+            document.getElementById('oldEntityType').value = 'random';
+            document.getElementById('numSet').value = '1';
+            updateFieldVisibility();
+        });
+    </script>
+</body>
+</html>
