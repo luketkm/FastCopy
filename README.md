@@ -18,6 +18,7 @@ Save text snippets, URLs, credentials, images, or any value you need to copy rep
 - Chip-style tags with custom colours per tag
 - Tag autocomplete suggestions from existing tags
 - Remark field for human-readable descriptions
+- Optional value masking in the list (e.g. `pa****rd`) — display-only, copy uses the full value
 - List view with search, tag filter tabs, and pin/favourite
 - Click any entry to copy its value to clipboard
 - Edit and delete entries
@@ -128,6 +129,12 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 ---
 
 ## Changelog
+
+### v1.0.6
+- FastCopy: added a "Mask value in list" toggle when adding or editing an entry (default off)
+- FastCopy: masked text entries display partially hidden in the list (e.g. `pa****rd`)
+- FastCopy: masking is display-only — clicking an entry always copies the full, actual value
+- FastCopy: masking applies to text entries only; existing entries without the setting show the full value
 
 ### v1.0.5
 - New tool: BRN Generator (`BRNGenerator.html`) for Malaysian SSM Business Registration Numbers

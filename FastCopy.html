@@ -239,6 +239,13 @@
             <label>Remark (optional)</label>
             <input type="text" id="remarkInput" placeholder="Any notes...">
         </div>
+        <div class="form-group">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:500;">
+                <input type="checkbox" id="maskInput" style="width:auto;">
+                <span>Mask value in list (text only)</span>
+            </label>
+            <p style="color:#888; font-size:0.75rem; margin-top:4px;">When on, the value shows partially hidden (e.g. <code>pa****rd</code>). Copying always uses the full value.</p>
+        </div>
         <button class="btn-save" onclick="saveEntry()">Save Entry</button>
     </div>
     <!-- LIST PAGE -->
@@ -504,6 +511,7 @@
             editingId = null;
             textInput.value = '';
             document.getElementById('remarkInput').value = '';
+            document.getElementById('maskInput').checked = false;
             currentTags = [];
             renderTags();
             clearPaste({ stopPropagation: function(){} });
@@ -516,6 +524,7 @@
         function saveEntry() {
             var text = textInput.value.trim();
             var remark = document.getElementById('remarkInput').value.trim();
+            var masked = document.getElementById('maskInput').checked;
 
             if (!text && !imageData) {
                 showToast('Please enter a value or paste an image');
@@ -530,6 +539,7 @@
                     entries[idx].value = imageData ? imageData : text;
                     entries[idx].tags = currentTags.slice();
                     entries[idx].remark = remark;
+                    entries[idx].masked = masked;
                 }
                 editingId = null;
                 document.querySelector('.btn-save').textContent = 'Save Entry';
@@ -544,6 +554,7 @@
                     value: imageData ? imageData : text,
                     tags: currentTags.slice(),
                     remark: remark,
+                    masked: masked,
                     created: new Date().toISOString()
                 };
                 entries.unshift(entry);
@@ -554,6 +565,7 @@
             // Reset form
             textInput.value = '';
             document.getElementById('remarkInput').value = '';
+            document.getElementById('maskInput').checked = false;
             currentTags = [];
             renderTags();
             clearPaste({ stopPropagation: function(){} });
@@ -662,7 +674,10 @@
                 if (entry.type === 'image') {
                     valueHtml = '<div class="entry-value"><img src="' + entry.value + '" alt="image"></div>';
                 } else {
-                    valueHtml = '<div class="entry-value">' + escapeHtml(entry.value) + '</div>';
+                    // masked defaults to off for entries missing/empty the field
+                    var isMasked = entry.masked === true;
+                    var displayVal = isMasked ? maskValue(entry.value) : entry.value;
+                    valueHtml = '<div class="entry-value">' + escapeHtml(displayVal) + '</div>';
                 }
 
                 var tagsHtml = '';
@@ -768,6 +783,9 @@
             // Populate remark
             document.getElementById('remarkInput').value = entry.remark || '';
 
+            // Populate mask toggle (default off when field is missing)
+            document.getElementById('maskInput').checked = entry.masked === true;
+
             // Update button text and title
             document.querySelector('.btn-save').textContent = 'Update Entry';
             document.getElementById('pageAddTitle').textContent = 'Edit Entry';
@@ -848,6 +866,18 @@
             var div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
+        }
+
+        // Partially hide a value for display, e.g. "password" -> "pa****rd".
+        // The real value is never changed; this is display-only.
+        function maskValue(str) {
+            if (!str) return '';
+            var len = str.length;
+            if (len === 1) return '*';
+            if (len === 2) return str[0] + '*';
+            if (len <= 4) return str[0] + '*'.repeat(len - 1);
+            // Show first 2 and last 2 characters, mask the middle
+            return str.substring(0, 2) + '*'.repeat(len - 4) + str.substring(len - 2);
         }
 
         // Init: render list on load (or handle URL param)
