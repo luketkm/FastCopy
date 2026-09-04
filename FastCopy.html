@@ -273,9 +273,17 @@
         let currentTags = [];
         let imageData = null; // base64
         let editingId = null; // track if we're editing
+        // Draft colors chosen in the form; only committed to tagColors on Save.
+        let pendingTagColors = {};
 
         function getTagColor(tag) {
             return tagColors[tag] || '#2c5364';
+        }
+
+        // Color used inside the Add/Edit form — prefers an unsaved draft choice.
+        function getDraftTagColor(tag) {
+            if (pendingTagColors.hasOwnProperty(tag)) return pendingTagColors[tag];
+            return getTagColor(tag);
         }
 
         function setTagColor(tag, color) {
@@ -477,7 +485,7 @@
             currentTags.forEach(function(tag, i) {
                 var chip = document.createElement('span');
                 chip.className = 'tag-chip';
-                chip.style.background = getTagColor(tag);
+                chip.style.background = getDraftTagColor(tag);
 
                 var label = document.createTextNode(tag + ' ');
                 chip.appendChild(label);
@@ -485,10 +493,11 @@
                 var colorInput = document.createElement('input');
                 colorInput.type = 'color';
                 colorInput.className = 'color-pick';
-                colorInput.value = getTagColor(tag);
+                colorInput.value = getDraftTagColor(tag);
                 colorInput.title = 'Pick tag color';
                 colorInput.addEventListener('input', function(e) {
-                    setTagColor(tag, e.target.value);
+                    // Store as a draft only; committed to tagColors when Save is clicked.
+                    pendingTagColors[tag] = e.target.value;
                     chip.style.background = e.target.value;
                 });
                 chip.appendChild(colorInput);
@@ -513,6 +522,7 @@
             document.getElementById('remarkInput').value = '';
             document.getElementById('maskInput').checked = false;
             currentTags = [];
+            pendingTagColors = {};
             renderTags();
             clearPaste({ stopPropagation: function(){} });
             textInput.style.display = '';
@@ -561,15 +571,31 @@
                 showToast('Entry saved!');
             }
 
+            // Commit any pending tag color choices now that the entry is saved.
+            commitPendingTagColors();
+
             saveToStorage();
             // Reset form
             textInput.value = '';
             document.getElementById('remarkInput').value = '';
             document.getElementById('maskInput').checked = false;
             currentTags = [];
+            pendingTagColors = {};
             renderTags();
             clearPaste({ stopPropagation: function(){} });
             textInput.style.display = '';
+        }
+
+        // Persist draft tag colors into the saved tagColors map.
+        function commitPendingTagColors() {
+            var changed = false;
+            Object.keys(pendingTagColors).forEach(function(tag) {
+                tagColors[tag] = pendingTagColors[tag];
+                changed = true;
+            });
+            if (changed) {
+                localStorage.setItem('fastcopy_tagcolors', JSON.stringify(tagColors));
+            }
         }
 
         function saveToStorage() {
@@ -776,7 +802,8 @@
                 textInput.value = entry.value;
             }
 
-            // Populate tags
+            // Populate tags (start with a clean color draft)
+            pendingTagColors = {};
             currentTags = entry.tags.slice();
             renderTags();
 

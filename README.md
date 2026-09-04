@@ -130,6 +130,10 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Changelog
 
+### v1.0.7
+- FastCopy: tag colour picks in the Add/Edit form are now held as a draft and only saved when you click Save Entry
+- FastCopy: cancelling an add/edit (or switching entries) discards unsaved colour changes instead of persisting them
+
 ### v1.0.6
 - FastCopy: added a "Mask value in list" toggle when adding or editing an entry (default off)
 - FastCopy: masked text entries display partially hidden in the list (e.g. `pa****rd`)
