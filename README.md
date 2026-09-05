@@ -122,13 +122,22 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Data Storage
 
-- **FastCopy entries:** `localStorage` key `fastcopy_entries`
+- **FastCopy entries:** `localStorage` key `fastcopy_entries` (text values plus image pointers)
+- **Images:** stored as Blobs in `IndexedDB` (database `fastcopy_images`); each entry keeps a lightweight `imageKey` pointer in localStorage
 - **Tag colours:** `localStorage` key `fastcopy_tagcolors`
-- **Portable backup:** Export/Import as `.json` file
+- **Sort preference:** `localStorage` key `fastcopy_sort`
+- **Portable backup:** Export/Import as `.json` file (images are embedded as base64 in the file so backups stay self-contained)
 
 ---
 
 ## Changelog
+
+### v1.0.12
+- FastCopy: images are now stored as Blobs in IndexedDB instead of base64 in localStorage, lifting the practical image capacity from ~5 MB to hundreds of MB
+- FastCopy: each entry keeps only a small image pointer in localStorage, keeping it small and fast
+- FastCopy: existing base64 images are migrated into IndexedDB automatically on first load (no action needed)
+- FastCopy: export still embeds images as base64 so backups stay self-contained and portable; import restores them into IndexedDB
+- FastCopy: saves now fail safely — if storage is full you get a clear message instead of silent data loss; images fall back to the old base64 storage if IndexedDB is unavailable
 
 ### v1.0.11
 - FastCopy: added sort options — Newest (default), Most used, and Recently used

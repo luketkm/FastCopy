@@ -281,7 +281,9 @@
         let entries = JSON.parse(localStorage.getItem('fastcopy_entries') || '[]');
         let tagColors = JSON.parse(localStorage.getItem('fastcopy_tagcolors') || '{}');
         let currentTags = [];
-        let imageData = null; // base64
+        let imageData = null; // base64 (only used for the IndexedDB-unavailable fallback)
+        let pendingImageBlob = null; // form image as a Blob (primary path)
+        let pendingPreviewUrl = null; // object URL for the form preview
         let editingId = null; // track if we're editing
         // Draft colors chosen in the form; only committed to tagColors on Save.
         let pendingTagColors = {};
@@ -299,6 +301,121 @@
             if (currentSort !== 'newest') {
                 setTimeout(function() { renderList(); }, 1600);
             }
+        }
+
+        // --- Image storage (IndexedDB) ---
+        // Images are stored as Blobs in IndexedDB; localStorage entries keep
+        // only a lightweight `imageKey` pointer. This keeps localStorage small
+        // and lifts the practical image capacity from ~5MB to hundreds of MB.
+        var IMAGE_DB = 'fastcopy_images';
+        var IMAGE_STORE = 'images';
+        var _imageDbPromise = null;
+        // Set to false if IndexedDB can't be opened; images then fall back to
+        // base64-in-localStorage so the app keeps working.
+        var idbAvailable = (typeof indexedDB !== 'undefined');
+
+        function openImageDB() {
+            if (_imageDbPromise) return _imageDbPromise;
+            _imageDbPromise = new Promise(function(resolve, reject) {
+                if (!idbAvailable) { reject(new Error('IndexedDB unavailable')); return; }
+                var req = indexedDB.open(IMAGE_DB, 1);
+                req.onupgradeneeded = function() {
+                    var db = req.result;
+                    if (!db.objectStoreNames.contains(IMAGE_STORE)) {
+                        db.createObjectStore(IMAGE_STORE);
+                    }
+                };
+                req.onsuccess = function() { resolve(req.result); };
+                req.onerror = function() { reject(req.error); };
+            });
+            return _imageDbPromise;
+        }
+
+        function putImage(key, blob) {
+            return openImageDB().then(function(db) {
+                return new Promise(function(resolve, reject) {
+                    var tx = db.transaction(IMAGE_STORE, 'readwrite');
+                    tx.objectStore(IMAGE_STORE).put(blob, key);
+                    tx.oncomplete = function() { resolve(key); };
+                    tx.onerror = function() { reject(tx.error); };
+                });
+            });
+        }
+
+        function getImage(key) {
+            return openImageDB().then(function(db) {
+                return new Promise(function(resolve, reject) {
+                    var tx = db.transaction(IMAGE_STORE, 'readonly');
+                    var req = tx.objectStore(IMAGE_STORE).get(key);
+                    req.onsuccess = function() { resolve(req.result); };
+                    req.onerror = function() { reject(req.error); };
+                });
+            });
+        }
+
+        function deleteImage(key) {
+            if (!key) return Promise.resolve();
+            return openImageDB().then(function(db) {
+                return new Promise(function(resolve, reject) {
+                    var tx = db.transaction(IMAGE_STORE, 'readwrite');
+                    tx.objectStore(IMAGE_STORE).delete(key);
+                    tx.oncomplete = function() { resolve(); };
+                    tx.onerror = function() { reject(tx.error); };
+                });
+            }).catch(function() { /* best-effort cleanup */ });
+        }
+
+        // Convert a base64/data-URL string to a Blob (for migration + import).
+        function dataUrlToBlob(dataUrl) {
+            var parts = dataUrl.split(',');
+            var mimeMatch = parts[0].match(/data:([^;]+)/);
+            var mime = mimeMatch ? mimeMatch[1] : 'image/png';
+            var binary = atob(parts[1]);
+            var len = binary.length;
+            var bytes = new Uint8Array(len);
+            for (var i = 0; i < len; i++) { bytes[i] = binary.charCodeAt(i); }
+            return new Blob([bytes], { type: mime });
+        }
+
+        // Convert a Blob back to a base64 data URL (for portable export).
+        function blobToDataUrl(blob) {
+            return new Promise(function(resolve, reject) {
+                var reader = new FileReader();
+                reader.onload = function() { resolve(reader.result); };
+                reader.onerror = function() { reject(reader.error); };
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        // One-time migration: move any legacy base64 image entries (value is a
+        // data: URL, no imageKey yet) into IndexedDB, replacing the base64 with
+        // an imageKey pointer. Idempotent and per-entry fault-tolerant.
+        // Resolves to the number of entries migrated.
+        function migrateBase64Images() {
+            if (!idbAvailable) return Promise.resolve(0);
+            var pending = entries.filter(function(e) {
+                return e.type === 'image' && !e.imageKey &&
+                    typeof e.value === 'string' && e.value.indexOf('data:') === 0;
+            });
+            if (pending.length === 0) return Promise.resolve(0);
+
+            var migrated = 0;
+            var chain = Promise.resolve();
+            pending.forEach(function(e) {
+                chain = chain.then(function() {
+                    var key = 'img_' + e.id;
+                    var blob = dataUrlToBlob(e.value);
+                    return putImage(key, blob).then(function() {
+                        e.imageKey = key;
+                        e.value = null;
+                        migrated++;
+                    }).catch(function() { /* leave this entry as-is */ });
+                });
+            });
+            return chain.then(function() {
+                if (migrated > 0) { saveToStorage(); }
+                return migrated;
+            });
         }
 
         function getTagColor(tag) {
@@ -431,25 +548,31 @@
             var file = e.dataTransfer.files[0];
             if (file && file.type.indexOf('image') !== -1) { readImageFile(file); }
         });
+        // Show the given image Blob in the paste-area preview.
+        function showImagePreview(blob) {
+            if (pendingPreviewUrl) { URL.revokeObjectURL(pendingPreviewUrl); }
+            pendingPreviewUrl = URL.createObjectURL(blob);
+            pasteArea.querySelector('.paste-hint').style.display = 'none';
+            var existing = pasteArea.querySelector('img');
+            if (existing) existing.remove();
+            var img = document.createElement('img');
+            img.src = pendingPreviewUrl;
+            pasteArea.appendChild(img);
+            document.getElementById('clearBtn').style.display = 'block';
+            textInput.style.display = 'none';
+        }
+
         function readImageFile(file) {
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                imageData = ev.target.result;
-                pasteArea.querySelector('.paste-hint').style.display = 'none';
-                var existing = pasteArea.querySelector('img');
-                if (existing) existing.remove();
-                var img = document.createElement('img');
-                img.src = imageData;
-                pasteArea.appendChild(img);
-                document.getElementById('clearBtn').style.display = 'block';
-                textInput.style.display = 'none';
-            };
-            reader.readAsDataURL(file);
+            // Keep the raw Blob; it goes to IndexedDB on save.
+            pendingImageBlob = file;
+            showImagePreview(file);
         }
 
         function clearPaste(e) {
             e.stopPropagation();
             imageData = null;
+            pendingImageBlob = null;
+            if (pendingPreviewUrl) { URL.revokeObjectURL(pendingPreviewUrl); pendingPreviewUrl = null; }
             var img = pasteArea.querySelector('img');
             if (img) img.remove();
             pasteArea.querySelector('.paste-hint').style.display = '';
@@ -629,57 +752,120 @@
             var text = textInput.value.trim();
             var remark = document.getElementById('remarkInput').value.trim();
             var masked = document.getElementById('maskInput').checked;
+            var hasImage = !!(pendingImageBlob || imageData);
 
-            if (!text && !imageData) {
+            if (!text && !hasImage) {
                 showToast('Please enter a value or paste an image');
                 return;
             }
 
-            if (editingId) {
-                // Update existing entry
-                var idx = entries.findIndex(function(e) { return e.id === editingId; });
-                if (idx !== -1) {
-                    entries[idx].type = imageData ? 'image' : 'text';
-                    entries[idx].value = imageData ? imageData : text;
-                    entries[idx].tags = currentTags.slice();
-                    entries[idx].remark = remark;
-                    entries[idx].masked = masked;
-                }
-                editingId = null;
-                document.querySelector('.btn-save').textContent = 'Save Entry';
-                document.getElementById('pageAddTitle').textContent = 'Add New Entry';
-                document.getElementById('resetBar').style.display = 'none';
-                showToast('Entry updated!');
+            // Persist the image (if any) to IndexedDB, then build/update the
+            // entry. Returns a promise so we can surface storage failures.
+            var isEdit = !!editingId;
+            var entryId = isEdit ? editingId : Date.now();
+            var imageKey = 'img_' + entryId;
+
+            // Step 1: store the image bytes (or fall back to base64).
+            var imagePromise;
+            if (pendingImageBlob && idbAvailable) {
+                imagePromise = putImage(imageKey, pendingImageBlob)
+                    .then(function() { return { key: imageKey, value: null }; })
+                    .catch(function() {
+                        // IndexedDB write failed — fall back to base64.
+                        return blobToDataUrl(pendingImageBlob).then(function(dataUrl) {
+                            return { key: null, value: dataUrl };
+                        });
+                    });
+            } else if (pendingImageBlob) {
+                // No IndexedDB: store base64 in localStorage.
+                imagePromise = blobToDataUrl(pendingImageBlob).then(function(dataUrl) {
+                    return { key: null, value: dataUrl };
+                });
+            } else if (imageData) {
+                // Editing an existing base64 image that wasn't changed.
+                imagePromise = Promise.resolve({ key: null, value: imageData });
             } else {
-                // Create new entry
-                var entry = {
-                    id: Date.now(),
-                    type: imageData ? 'image' : 'text',
-                    value: imageData ? imageData : text,
-                    tags: currentTags.slice(),
-                    remark: remark,
-                    masked: masked,
-                    created: new Date().toISOString(),
-                    copyCount: 0,
-                    lastCopied: null
-                };
-                entries.unshift(entry);
-                showToast('Entry saved!');
+                // Text entry.
+                imagePromise = Promise.resolve(null);
             }
 
-            // Commit any pending tag color choices now that the entry is saved.
-            commitPendingTagColors();
+            imagePromise.then(function(imageResult) {
+                var oldImageKey = null;
 
-            saveToStorage();
-            // Reset form
-            textInput.value = '';
-            document.getElementById('remarkInput').value = '';
-            document.getElementById('maskInput').checked = false;
-            currentTags = [];
-            pendingTagColors = {};
-            renderTags();
-            clearPaste({ stopPropagation: function(){} });
-            textInput.style.display = '';
+                if (isEdit) {
+                    var idx = entries.findIndex(function(e) { return e.id === editingId; });
+                    if (idx !== -1) {
+                        oldImageKey = entries[idx].imageKey || null;
+                        if (imageResult) {
+                            entries[idx].type = 'image';
+                            entries[idx].imageKey = imageResult.key;
+                            entries[idx].value = imageResult.value; // null when in IndexedDB
+                        } else {
+                            entries[idx].type = 'text';
+                            entries[idx].imageKey = null;
+                            entries[idx].value = text;
+                        }
+                        entries[idx].tags = currentTags.slice();
+                        entries[idx].remark = remark;
+                        entries[idx].masked = masked;
+                    }
+                    editingId = null;
+                    document.querySelector('.btn-save').textContent = 'Save Entry';
+                    document.getElementById('pageAddTitle').textContent = 'Add New Entry';
+                    document.getElementById('resetBar').style.display = 'none';
+                } else {
+                    var entry = {
+                        id: entryId,
+                        type: imageResult ? 'image' : 'text',
+                        imageKey: imageResult ? imageResult.key : null,
+                        value: imageResult ? imageResult.value : text,
+                        tags: currentTags.slice(),
+                        remark: remark,
+                        masked: masked,
+                        created: new Date().toISOString(),
+                        copyCount: 0,
+                        lastCopied: null
+                    };
+                    entries.unshift(entry);
+                }
+
+                // Commit any pending tag color choices now that the entry is saved.
+                commitPendingTagColors();
+
+                var ok = saveToStorage();
+                if (!ok) {
+                    // Persist failed (quota). Roll back the just-added new entry
+                    // and its orphaned image so state stays consistent.
+                    if (!isEdit) {
+                        entries = entries.filter(function(e) { return e.id !== entryId; });
+                        if (imageResult && imageResult.key) deleteImage(imageResult.key);
+                    }
+                    return;
+                }
+
+                // On edit that replaced an image, remove the stale Blob.
+                if (isEdit && oldImageKey && oldImageKey !== imageKey) {
+                    deleteImage(oldImageKey);
+                }
+                // If an edit turned an image entry into text, drop its old Blob.
+                if (isEdit && !imageResult && oldImageKey) {
+                    deleteImage(oldImageKey);
+                }
+
+                showToast(isEdit ? 'Entry updated!' : 'Entry saved!');
+
+                // Reset form
+                textInput.value = '';
+                document.getElementById('remarkInput').value = '';
+                document.getElementById('maskInput').checked = false;
+                currentTags = [];
+                pendingTagColors = {};
+                renderTags();
+                clearPaste({ stopPropagation: function(){} });
+                textInput.style.display = '';
+            }).catch(function() {
+                showToast('Could not save entry');
+            });
         }
 
         // Persist draft tag colors into the saved tagColors map.
@@ -694,8 +880,20 @@
             }
         }
 
+        // Persist entries. Returns true on success, false on failure (e.g.
+        // localStorage quota exceeded) so callers can roll back and warn.
         function saveToStorage() {
-            localStorage.setItem('fastcopy_entries', JSON.stringify(entries));
+            try {
+                localStorage.setItem('fastcopy_entries', JSON.stringify(entries));
+                return true;
+            } catch (err) {
+                var quota = err && (err.name === 'QuotaExceededError' ||
+                    err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+                showToast(quota
+                    ? 'Storage full — entry not saved. Export and remove some entries.'
+                    : 'Could not save to storage');
+                return false;
+            }
         }
         // --- List Page ---
         var activeTagFilter = '';
@@ -765,6 +963,7 @@
             var search = document.getElementById('searchInput').value.toLowerCase();
             var tagF = activeTagFilter;
             var list = document.getElementById('entryList');
+            revokeListObjectUrls();
             list.innerHTML = '';
 
             var filtered = entries.filter(function(e) {
@@ -818,7 +1017,13 @@
 
                 var valueHtml = '';
                 if (entry.type === 'image') {
-                    valueHtml = '<div class="entry-value"><img src="' + entry.value + '" alt="image"></div>';
+                    if (entry.imageKey) {
+                        // Loaded asynchronously from IndexedDB after insertion.
+                        valueHtml = '<div class="entry-value"><img alt="image" data-img-pending="1"></div>';
+                    } else {
+                        // Legacy/base64 fallback: value holds the data URL.
+                        valueHtml = '<div class="entry-value"><img src="' + entry.value + '" alt="image"></div>';
+                    }
                 } else {
                     // masked defaults to off for entries missing/empty the field
                     var isMasked = entry.masked === true;
@@ -843,7 +1048,34 @@
 
                 card.addEventListener('click', function() { copyEntry(entry, card); });
                 list.appendChild(card);
+
+                // Async-load IndexedDB-backed image thumbnails.
+                if (entry.type === 'image' && entry.imageKey) {
+                    (function(e, cardEl) {
+                        var imgEl = cardEl.querySelector('img[data-img-pending]');
+                        if (!imgEl) return;
+                        getImage(e.imageKey).then(function(blob) {
+                            if (!blob) { markImageUnavailable(imgEl); return; }
+                            var u = URL.createObjectURL(blob);
+                            listObjectUrls.push(u);
+                            imgEl.src = u;
+                            imgEl.removeAttribute('data-img-pending');
+                        }).catch(function() { markImageUnavailable(imgEl); });
+                    })(entry, card);
+                }
             });
+        }
+
+        // Object URLs created for the current list render; revoked on re-render
+        // to avoid leaking memory.
+        var listObjectUrls = [];
+        function revokeListObjectUrls() {
+            listObjectUrls.forEach(function(u) { URL.revokeObjectURL(u); });
+            listObjectUrls = [];
+        }
+        function markImageUnavailable(imgEl) {
+            var holder = imgEl.parentNode;
+            if (holder) { holder.textContent = '(image unavailable)'; holder.style.color = '#aaa'; }
         }
         // Contextual empty state: explains why the list is empty and offers a
         // one-click way to recover (clear search / show all tags).
@@ -920,8 +1152,14 @@
                     recordCopy(entry);
                 });
             } else {
-                // For images, copy as blob if supported
-                fetch(entry.value).then(function(r) { return r.blob(); }).then(function(blob) {
+                // For images, copy as blob if supported. Source the Blob from
+                // IndexedDB (imageKey) or, for legacy entries, from the base64.
+                var blobPromise = entry.imageKey
+                    ? getImage(entry.imageKey)
+                    : fetch(entry.value).then(function(r) { return r.blob(); });
+
+                blobPromise.then(function(blob) {
+                    if (!blob) { showToast('Image not found'); return; }
                     var item = new ClipboardItem({ [blob.type]: blob });
                     navigator.clipboard.write([item]).then(function() {
                         showToast('Image copied to clipboard!');
@@ -937,7 +1175,10 @@
 
         function deleteEntry(id, e) {
             e.stopPropagation();
+            var entry = entries.find(function(en) { return en.id === id; });
             entries = entries.filter(function(en) { return en.id !== id; });
+            // Remove the backing image Blob so it doesn't orphan in IndexedDB.
+            if (entry && entry.imageKey) { deleteImage(entry.imageKey); }
             saveToStorage();
             populateTagFilter();
             renderList();
@@ -966,16 +1207,19 @@
 
             // Populate form with existing data
             if (entry.type === 'image') {
-                imageData = entry.value;
-                pasteArea.querySelector('.paste-hint').style.display = 'none';
-                var existing = pasteArea.querySelector('img');
-                if (existing) existing.remove();
-                var img = document.createElement('img');
-                img.src = imageData;
-                pasteArea.appendChild(img);
-                document.getElementById('clearBtn').style.display = 'block';
+                imageData = null;
+                pendingImageBlob = null;
                 textInput.style.display = 'none';
                 textInput.value = '';
+                if (entry.imageKey) {
+                    getImage(entry.imageKey).then(function(blob) {
+                        if (blob) { pendingImageBlob = blob; showImagePreview(blob); }
+                    });
+                } else if (entry.value) {
+                    // Legacy base64 image: load it back into a Blob for re-save.
+                    pendingImageBlob = dataUrlToBlob(entry.value);
+                    showImagePreview(pendingImageBlob);
+                }
             } else {
                 clearPaste({ stopPropagation: function(){} });
                 textInput.style.display = '';
@@ -999,19 +1243,41 @@
             document.getElementById('resetBar').style.display = 'block';
         }
         // --- Import / Export ---
+        // Export stays a single portable JSON with images embedded as base64,
+        // so backups remain self-contained and compatible with older versions.
+        // IndexedDB-backed images are read back and re-embedded here.
         function exportData() {
-            var exportObj = {
-                entries: entries,
-                tagColors: tagColors
-            };
-            var blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = 'fastcopy_data_' + new Date().toISOString().slice(0,10) + '.json';
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('Exported ' + entries.length + ' entries');
+            var exportEntries = entries.map(function(e) {
+                if (e.type === 'image' && e.imageKey) {
+                    return getImage(e.imageKey).then(function(blob) {
+                        var copy = Object.assign({}, e);
+                        delete copy.imageKey;
+                        if (blob) {
+                            return blobToDataUrl(blob).then(function(dataUrl) {
+                                copy.value = dataUrl;
+                                return copy;
+                            });
+                        }
+                        copy.value = null;
+                        return copy;
+                    });
+                }
+                return Promise.resolve(e);
+            });
+
+            Promise.all(exportEntries).then(function(resolved) {
+                var exportObj = { entries: resolved, tagColors: tagColors };
+                var blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'fastcopy_data_' + new Date().toISOString().slice(0,10) + '.json';
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('Exported ' + resolved.length + ' entries');
+            }).catch(function() {
+                showToast('Export failed');
+            });
         }
 
         function importData(e) {
@@ -1036,31 +1302,51 @@
                         showToast('Invalid file format');
                         return;
                     }
-                    // Build a map of existing entry IDs for quick lookup
-                    var existingMap = {};
-                    entries.forEach(function(ent, idx) { existingMap[ent.id] = idx; });
-                    var newCount = 0;
-                    var updatedCount = 0;
+                    // For each imported image entry that carries embedded
+                    // base64, move it into IndexedDB and store an imageKey
+                    // pointer (falls back to keeping base64 if IDB is off).
+                    var prep = Promise.resolve();
                     importedEntries.forEach(function(imp) {
-                        if (existingMap.hasOwnProperty(imp.id)) {
-                            // Duplicate found — overwrite the old entry with the imported one
-                            entries[existingMap[imp.id]] = imp;
-                            updatedCount++;
-                        } else {
-                            // New entry — add to the front
-                            entries.unshift(imp);
-                            newCount++;
+                        if (imp && imp.type === 'image' && typeof imp.value === 'string' &&
+                            imp.value.indexOf('data:') === 0 && idbAvailable) {
+                            prep = prep.then(function() {
+                                var key = 'img_' + imp.id;
+                                var blob = dataUrlToBlob(imp.value);
+                                return putImage(key, blob).then(function() {
+                                    imp.imageKey = key;
+                                    imp.value = null;
+                                }).catch(function() { /* keep base64 fallback */ });
+                            });
                         }
                     });
-                    // Merge imported tag colors (imported values overwrite existing)
-                    Object.keys(importedColors).forEach(function(tag) {
-                        tagColors[tag] = importedColors[tag];
+
+                    prep.then(function() {
+                        // Build a map of existing entry IDs for quick lookup
+                        var existingMap = {};
+                        entries.forEach(function(ent, idx) { existingMap[ent.id] = idx; });
+                        var newCount = 0;
+                        var updatedCount = 0;
+                        importedEntries.forEach(function(imp) {
+                            if (existingMap.hasOwnProperty(imp.id)) {
+                                // Duplicate found — overwrite the old entry with the imported one
+                                entries[existingMap[imp.id]] = imp;
+                                updatedCount++;
+                            } else {
+                                // New entry — add to the front
+                                entries.unshift(imp);
+                                newCount++;
+                            }
+                        });
+                        // Merge imported tag colors (imported values overwrite existing)
+                        Object.keys(importedColors).forEach(function(tag) {
+                            tagColors[tag] = importedColors[tag];
+                        });
+                        localStorage.setItem('fastcopy_tagcolors', JSON.stringify(tagColors));
+                        saveToStorage();
+                        populateTagFilter();
+                        renderList();
+                        showToast('Imported: ' + newCount + ' new, ' + updatedCount + ' updated');
                     });
-                    localStorage.setItem('fastcopy_tagcolors', JSON.stringify(tagColors));
-                    saveToStorage();
-                    populateTagFilter();
-                    renderList();
-                    showToast('Imported: ' + newCount + ' new, ' + updatedCount + ' updated');
                 } catch (err) {
                     showToast('Error reading file');
                 }
@@ -1097,12 +1383,18 @@
         if (startTag) {
             activeTagFilter = startTag;
         }
-        if (startPage === 'add') {
-            showPage('add');
-        } else {
-            populateTagFilter();
-            renderList();
-        }
+
+        // Migrate any legacy base64 images into IndexedDB, then render. A brief
+        // toast is shown only if something was actually migrated.
+        migrateBase64Images().then(function(count) {
+            if (startPage === 'add') {
+                showPage('add');
+            } else {
+                populateTagFilter();
+                renderList();
+            }
+            if (count > 0) { showToast('Optimized storage for ' + count + ' image' + (count > 1 ? 's' : '')); }
+        });
     </script>
 </body>
 </html>

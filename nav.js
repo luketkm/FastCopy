@@ -60,6 +60,6 @@
     // Version number
     var version = document.createElement('span');
     version.className = 'version';
-    version.textContent = 'v1.0.11';
+    version.textContent = 'v1.0.12';
     nav.appendChild(version);
 })();
