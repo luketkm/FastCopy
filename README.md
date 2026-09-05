@@ -130,6 +130,11 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Changelog
 
+### v1.0.9
+- FastCopy: entry action buttons (pin/edit/delete) are now fully visible by default on touch devices, which have no hover state
+- FastCopy: on touch devices the buttons use a solid white background for better contrast against the card
+- FastCopy: desktop hover behaviour is unchanged — buttons stay subtle until you hover the card
+
 ### v1.0.8
 - FastCopy: tag labels now auto-pick black or white text based on the tag colour's brightness, so light colours stay readable
 - FastCopy: auto-contrast applies to tag chips in the form, tag pills in the list, and the active filter tab
