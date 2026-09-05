@@ -130,6 +130,12 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Changelog
 
+### v1.0.8
+- FastCopy: tag labels now auto-pick black or white text based on the tag colour's brightness, so light colours stay readable
+- FastCopy: auto-contrast applies to tag chips in the form, tag pills in the list, and the active filter tab
+- FastCopy: very light tag colours are darkened on the inactive filter tabs so they remain legible on the white background
+- FastCopy: display-only change — stored tag colours and copied values are unchanged
+
 ### v1.0.7
 - FastCopy: tag colour picks in the Add/Edit form are now held as a draft and only saved when you click Save Entry
 - FastCopy: cancelling an add/edit (or switching entries) discards unsaved colour changes instead of persisting them

@@ -62,16 +62,17 @@
             border-radius: 20px; font-size: 0.8rem;
         }
         .tag-chip button {
-            background: none; border: none; color: rgba(255,255,255,0.8);
+            background: none; border: none; color: currentColor; opacity: 0.8;
             cursor: pointer; font-size: 1rem; line-height: 1;
         }
-        .tag-chip button:hover { color: #fff; }
+        .tag-chip button:hover { opacity: 1; }
         .tag-chip .color-pick {
-            width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.5);
+            width: 18px; height: 18px; border: 2px solid currentColor;
             border-radius: 50%; cursor: pointer; padding: 0;
             appearance: none; -webkit-appearance: none;
-            background: none; overflow: hidden;
+            background: none; overflow: hidden; opacity: 0.6;
         }
+        .tag-chip .color-pick:hover { opacity: 1; }
         .tag-chip .color-pick::-webkit-color-swatch-wrapper { padding: 0; }
         .tag-chip .color-pick::-webkit-color-swatch { border: none; border-radius: 50%; }
         .tag-input {
@@ -280,6 +281,57 @@
             return tagColors[tag] || '#2c5364';
         }
 
+        // Parse a hex color to {r,g,b} (0-255). Supports #rgb and #rrggbb.
+        // Returns null for malformed input.
+        function parseHexColor(hex) {
+            if (typeof hex !== 'string') return null;
+            var h = hex.trim().replace(/^#/, '');
+            if (h.length === 3) {
+                h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+            }
+            if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
+            return {
+                r: parseInt(h.substring(0, 2), 16),
+                g: parseInt(h.substring(2, 4), 16),
+                b: parseInt(h.substring(4, 6), 16)
+            };
+        }
+
+        // Relative luminance (0-1) using the standard sRGB formula.
+        function luminance(rgb) {
+            var chan = [rgb.r, rgb.g, rgb.b].map(function(v) {
+                v = v / 255;
+                return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+            });
+            return 0.2126 * chan[0] + 0.7152 * chan[1] + 0.0722 * chan[2];
+        }
+
+        // Choose black or white text for best readability on a given background.
+        // Falls back to white for malformed input. Display-only, no data change.
+        function getContrastColor(hexColor) {
+            var rgb = parseHexColor(hexColor);
+            if (!rgb) return '#fff';
+            return luminance(rgb) > 0.5 ? '#000' : '#fff';
+        }
+
+        // For a tag color used as text/border on a WHITE background (inactive
+        // filter tabs), very light colors are unreadable. If the color is too
+        // light, darken it toward a legible value while preserving hue.
+        function getReadableOnWhite(hexColor) {
+            var rgb = parseHexColor(hexColor);
+            if (!rgb) return '#2c5364';
+            // Luminance threshold above which the color is too pale on white.
+            if (luminance(rgb) <= 0.6) return hexColor;
+            var factor = 0.55; // darken
+            var d = {
+                r: Math.round(rgb.r * factor),
+                g: Math.round(rgb.g * factor),
+                b: Math.round(rgb.b * factor)
+            };
+            var toHex = function(n) { var s = n.toString(16); return s.length === 1 ? '0' + s : s; };
+            return '#' + toHex(d.r) + toHex(d.g) + toHex(d.b);
+        }
+
         // Color used inside the Add/Edit form — prefers an unsaved draft choice.
         function getDraftTagColor(tag) {
             if (pendingTagColors.hasOwnProperty(tag)) return pendingTagColors[tag];
@@ -485,7 +537,9 @@
             currentTags.forEach(function(tag, i) {
                 var chip = document.createElement('span');
                 chip.className = 'tag-chip';
-                chip.style.background = getDraftTagColor(tag);
+                var chipColor = getDraftTagColor(tag);
+                chip.style.background = chipColor;
+                chip.style.color = getContrastColor(chipColor);
 
                 var label = document.createTextNode(tag + ' ');
                 chip.appendChild(label);
@@ -499,6 +553,7 @@
                     // Store as a draft only; committed to tagColors when Save is clicked.
                     pendingTagColors[tag] = e.target.value;
                     chip.style.background = e.target.value;
+                    chip.style.color = getContrastColor(e.target.value);
                 });
                 chip.appendChild(colorInput);
 
@@ -642,14 +697,18 @@
             allTags.forEach(function(tag) {
                 var btn = document.createElement('button');
                 btn.textContent = tag;
+                var tagColor = getTagColor(tag);
                 if (activeTagFilter === tag) {
                     btn.className = 'active';
-                    btn.style.background = getTagColor(tag);
-                    btn.style.borderColor = getTagColor(tag);
-                    btn.style.color = '#fff';
+                    btn.style.background = tagColor;
+                    btn.style.borderColor = tagColor;
+                    btn.style.color = getContrastColor(tagColor);
                 } else {
-                    btn.style.borderColor = getTagColor(tag);
-                    btn.style.color = getTagColor(tag);
+                    // Text/border sit on a white background, so darken very
+                    // light colors to keep them legible.
+                    var readable = getReadableOnWhite(tagColor);
+                    btn.style.borderColor = readable;
+                    btn.style.color = readable;
                 }
                 btn.addEventListener('click', function() {
                     activeTagFilter = tag;
@@ -709,7 +768,7 @@
                 var tagsHtml = '';
                 if (entry.tags.length) {
                     tagsHtml = '<div class="entry-tags">' +
-                        entry.tags.map(function(t) { return '<span class="entry-tag" style="background:' + getTagColor(t) + '">' + escapeHtml(t) + '</span>'; }).join('') +
+                        entry.tags.map(function(t) { var c = getTagColor(t); return '<span class="entry-tag" style="background:' + c + ';color:' + getContrastColor(c) + '">' + escapeHtml(t) + '</span>'; }).join('') +
                         '</div>';
                 }
 
