@@ -130,7 +130,13 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Changelog
 
-### v1.1.0
+### v1.0.11
+- FastCopy: added sort options — Newest (default), Most used, and Recently used
+- FastCopy: each copy is now tracked (copy count and last-copied time) to power the usage-based sorts
+- FastCopy: pinned entries always stay on top regardless of the selected sort
+- FastCopy: the chosen sort is remembered across visits; existing and imported entries sort correctly with no data changes
+
+### v1.0.10
 - FastCopy: search now debounces (~200ms) so the list re-renders once you pause typing instead of on every keystroke — smoother on large lists
 - FastCopy: empty results now show a contextual message — distinguishing no entries yet, no search match, and no match for the selected tag
 - FastCopy: empty search/tag results include a one-click "Clear search" / "Show all" button to quickly return to the full list

@@ -263,6 +263,11 @@
         </div>
         <div class="search-bar">
             <input type="text" id="searchInput" placeholder="Search value or remark...">
+            <select id="sortSelect" title="Sort entries" onchange="changeSort(this.value)">
+                <option value="newest">Newest</option>
+                <option value="mostUsed">Most used</option>
+                <option value="recentlyUsed">Recently used</option>
+            </select>
         </div>
         <div class="tag-tabs" id="tagTabs"></div>
         <div class="entry-list" id="entryList">
@@ -280,6 +285,21 @@
         let editingId = null; // track if we're editing
         // Draft colors chosen in the form; only committed to tagColors on Save.
         let pendingTagColors = {};
+        // List sort order; persisted so the choice survives reloads.
+        let currentSort = localStorage.getItem('fastcopy_sort') || 'newest';
+
+        // Record a successful copy: bump usage count and timestamp, persist,
+        // and re-render so usage-based sorts reflect the change. The re-render
+        // is deferred so the card's "copied" flash is visible first, and is
+        // skipped for the Newest sort (copying never changes that order).
+        function recordCopy(entry) {
+            entry.copyCount = (entry.copyCount || 0) + 1;
+            entry.lastCopied = Date.now();
+            saveToStorage();
+            if (currentSort !== 'newest') {
+                setTimeout(function() { renderList(); }, 1600);
+            }
+        }
 
         function getTagColor(tag) {
             return tagColors[tag] || '#2c5364';
@@ -639,7 +659,9 @@
                     tags: currentTags.slice(),
                     remark: remark,
                     masked: masked,
-                    created: new Date().toISOString()
+                    created: new Date().toISOString(),
+                    copyCount: 0,
+                    lastCopied: null
                 };
                 entries.unshift(entry);
                 showToast('Entry saved!');
@@ -760,11 +782,31 @@
                 return;
             }
 
-            // Sort: pinned first
+            // Sort: pinned always first, then by the selected order.
+            // `entries` is newest-first (unshift on save), so array index
+            // acts as the "newest" tiebreaker without needing created dates.
+            var order = {};
+            entries.forEach(function(e, i) { order[e.id] = i; });
+            var byNewest = function(a, b) { return order[a.id] - order[b.id]; };
+
             filtered.sort(function(a, b) {
-                var aPinned = a.pinned ? 1 : 0;
-                var bPinned = b.pinned ? 1 : 0;
-                return bPinned - aPinned;
+                var pinDiff = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+                if (pinDiff !== 0) return pinDiff;
+
+                if (currentSort === 'mostUsed') {
+                    var cDiff = (b.copyCount || 0) - (a.copyCount || 0);
+                    if (cDiff !== 0) return cDiff;
+                    var lDiff = (b.lastCopied || 0) - (a.lastCopied || 0);
+                    if (lDiff !== 0) return lDiff;
+                    return byNewest(a, b);
+                }
+                if (currentSort === 'recentlyUsed') {
+                    var rDiff = (b.lastCopied || 0) - (a.lastCopied || 0);
+                    if (rDiff !== 0) return rDiff;
+                    return byNewest(a, b);
+                }
+                // newest (default)
+                return byNewest(a, b);
             });
 
             filtered.forEach(function(entry) {
@@ -854,12 +896,19 @@
             renderList();
         }
 
+        function changeSort(value) {
+            currentSort = value;
+            localStorage.setItem('fastcopy_sort', value);
+            renderList();
+        }
+
         function copyEntry(entry, card) {
             if (entry.type === 'text') {
                 navigator.clipboard.writeText(entry.value).then(function() {
                     showToast('Copied: ' + entry.value.substring(0, 40) + (entry.value.length > 40 ? '...' : ''));
                     card.classList.add('copied');
                     setTimeout(function() { card.classList.remove('copied'); }, 1500);
+                    recordCopy(entry);
                 }).catch(function() {
                     var ta = document.createElement('textarea');
                     ta.value = entry.value;
@@ -868,6 +917,7 @@
                     document.execCommand('copy');
                     document.body.removeChild(ta);
                     showToast('Copied!');
+                    recordCopy(entry);
                 });
             } else {
                 // For images, copy as blob if supported
@@ -877,6 +927,7 @@
                         showToast('Image copied to clipboard!');
                         card.classList.add('copied');
                         setTimeout(function() { card.classList.remove('copied'); }, 1500);
+                        recordCopy(entry);
                     });
                 }).catch(function() {
                     showToast('Cannot copy image in this browser');
@@ -1037,6 +1088,9 @@
         }
 
         // Init: render list on load (or handle URL param)
+        // Reflect the persisted sort choice in the dropdown.
+        document.getElementById('sortSelect').value = currentSort;
+
         var urlParams = new URLSearchParams(window.location.search);
         var startPage = urlParams.get('page');
         var startTag = urlParams.get('tag');
