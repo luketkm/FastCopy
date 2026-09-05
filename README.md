@@ -130,6 +130,11 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ## Changelog
 
+### v1.1.0
+- FastCopy: search now debounces (~200ms) so the list re-renders once you pause typing instead of on every keystroke — smoother on large lists
+- FastCopy: empty results now show a contextual message — distinguishing no entries yet, no search match, and no match for the selected tag
+- FastCopy: empty search/tag results include a one-click "Clear search" / "Show all" button to quickly return to the full list
+
 ### v1.0.9
 - FastCopy: entry action buttons (pin/edit/delete) are now fully visible by default on touch devices, which have no hover state
 - FastCopy: on touch devices the buttons use a solid white background for better contrast against the card

@@ -262,7 +262,7 @@
             <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
         </div>
         <div class="search-bar">
-            <input type="text" id="searchInput" placeholder="Search value or remark..." oninput="renderList()">
+            <input type="text" id="searchInput" placeholder="Search value or remark...">
         </div>
         <div class="tag-tabs" id="tagTabs"></div>
         <div class="entry-list" id="entryList">
@@ -355,6 +355,21 @@
             document.getElementById('navList').classList.toggle('active', page === 'list');
             if (page === 'list') { populateTagFilter(); renderList(); }
         }
+
+        // --- Debounce ---
+        // Returns a wrapped fn that only runs after `delay` ms of quiet.
+        function debounce(fn, delay) {
+            var timer = null;
+            return function() {
+                var args = arguments, ctx = this;
+                clearTimeout(timer);
+                timer = setTimeout(function() { fn.apply(ctx, args); }, delay);
+            };
+        }
+
+        // Debounced search: re-render ~200ms after the user stops typing.
+        var debouncedSearch = debounce(function() { renderList(); }, 200);
+        document.getElementById('searchInput').addEventListener('input', debouncedSearch);
 
         // --- Toast ---
         function showToast(msg) {
@@ -741,7 +756,7 @@
                 return matchSearch && matchTag;
             });
             if (filtered.length === 0) {
-                list.innerHTML = '<div class="empty-state">No entries found.</div>';
+                renderEmptyState(list, search, tagF);
                 return;
             }
 
@@ -788,6 +803,57 @@
                 list.appendChild(card);
             });
         }
+        // Contextual empty state: explains why the list is empty and offers a
+        // one-click way to recover (clear search / show all tags).
+        function renderEmptyState(list, search, tagF) {
+            list.innerHTML = '';
+            var wrap = document.createElement('div');
+            wrap.className = 'empty-state';
+
+            var msg = document.createElement('div');
+            var actionLabel = '';
+            var actionFn = null;
+
+            if (entries.length === 0) {
+                msg.textContent = 'No entries yet. Add one!';
+            } else if (search) {
+                msg.textContent = 'No entries match your search' +
+                    (tagF ? ' in "' + tagF + '".' : '.');
+                actionLabel = 'Clear search';
+                actionFn = clearSearchFilter;
+            } else if (tagF) {
+                msg.textContent = 'No entries tagged "' + tagF + '".';
+                actionLabel = 'Show all';
+                actionFn = clearTagFilter;
+            } else {
+                msg.textContent = 'No entries found.';
+            }
+            wrap.appendChild(msg);
+
+            if (actionFn) {
+                var btn = document.createElement('button');
+                btn.textContent = actionLabel;
+                btn.style.cssText = 'margin-top:12px; padding:8px 16px; border:2px solid #2c5364;' +
+                    ' border-radius:8px; background:#fff; color:#2c5364; font-size:0.85rem;' +
+                    ' font-weight:500; cursor:pointer;';
+                btn.addEventListener('click', actionFn);
+                wrap.appendChild(btn);
+            }
+            list.appendChild(wrap);
+        }
+
+        function clearSearchFilter() {
+            document.getElementById('searchInput').value = '';
+            renderList();
+        }
+
+        function clearTagFilter() {
+            activeTagFilter = '';
+            updateUrlTag('');
+            populateTagFilter();
+            renderList();
+        }
+
         function copyEntry(entry, card) {
             if (entry.type === 'text') {
                 navigator.clipboard.writeText(entry.value).then(function() {
