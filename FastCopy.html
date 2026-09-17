@@ -260,6 +260,7 @@
             <button onclick="exportData()">&#128229; Export JSON</button>
             <button onclick="document.getElementById('importFile').click()">&#128228; Import JSON</button>
             <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+            <button onclick="resetData()" style="border-color:#e74c3c; color:#e74c3c;" onmouseover="this.style.background='#fdecea'" onmouseout="this.style.background='#fff'">&#128465; Reset Data</button>
         </div>
         <div class="search-bar">
             <input type="text" id="searchInput" placeholder="Search value or remark...">
@@ -359,6 +360,19 @@
                 return new Promise(function(resolve, reject) {
                     var tx = db.transaction(IMAGE_STORE, 'readwrite');
                     tx.objectStore(IMAGE_STORE).delete(key);
+                    tx.oncomplete = function() { resolve(); };
+                    tx.onerror = function() { reject(tx.error); };
+                });
+            }).catch(function() { /* best-effort cleanup */ });
+        }
+
+        // Remove every stored image Blob (used by Reset Data). Best-effort.
+        function clearAllImages() {
+            if (!idbAvailable) return Promise.resolve();
+            return openImageDB().then(function(db) {
+                return new Promise(function(resolve, reject) {
+                    var tx = db.transaction(IMAGE_STORE, 'readwrite');
+                    tx.objectStore(IMAGE_STORE).clear();
                     tx.oncomplete = function() { resolve(); };
                     tx.onerror = function() { reject(tx.error); };
                 });
@@ -1278,6 +1292,42 @@
             }).catch(function() {
                 showToast('Export failed');
             });
+        }
+
+        function resetData() {
+            // Nothing to clear guard
+            if (entries.length === 0 && Object.keys(tagColors).length === 0) {
+                showToast('Nothing to clear');
+                return;
+            }
+
+            var msg = 'This will permanently delete all ' + entries.length +
+                ' entr' + (entries.length === 1 ? 'y' : 'ies') +
+                ' and all tag colors. This cannot be undone.\n\n' +
+                'Tip: use "Export JSON" first if you want a backup.\n\n' +
+                'Continue?';
+            if (!confirm(msg)) return;
+
+            // Clear in-memory state
+            entries = [];
+            tagColors = {};
+            currentTags = [];
+            pendingTagColors = {};
+            editingId = null;
+            activeTagFilter = '';
+
+            // Clear persisted storage
+            localStorage.removeItem('fastcopy_entries');
+            localStorage.removeItem('fastcopy_tagcolors');
+
+            // Clear stored image Blobs (IndexedDB), best-effort.
+            clearAllImages();
+
+            // Refresh UI
+            updateUrlTag('');
+            populateTagFilter();
+            renderList();
+            showToast('All data cleared');
         }
 
         function importData(e) {

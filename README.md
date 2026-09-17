@@ -24,6 +24,7 @@ Save text snippets, URLs, credentials, images, or any value you need to copy rep
 - Edit and delete entries
 - Pin important entries to the top
 - Export/Import data as portable JSON file
+- Reset Data button to clear all entries, tag colors, and images (with confirmation)
 - Data stored in browser localStorage
 
 **How to use:**
@@ -131,6 +132,11 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 ---
 
 ## Changelog
+
+### v1.0.13
+- FastCopy: added a "Reset Data" button on the list page to clear all entries, tag colors, and stored images
+- FastCopy: reset asks for confirmation (with a reminder to export a backup first) and is a no-op when there's nothing to clear
+- FastCopy: reset clears localStorage and the IndexedDB image store, then refreshes to the empty state
 
 ### v1.0.12
 - FastCopy: images are now stored as Blobs in IndexedDB instead of base64 in localStorage, lifting the practical image capacity from ~5 MB to hundreds of MB
