@@ -1,6 +1,6 @@
 # Tools Collection
 
-A set of lightweight, portable HTML-based utilities for testers and developers. No server required — just open in a browser.
+A set of lightweight, portable HTML-based utilities for testers and developers. No server required — just open in a browser. (Only the optional Clipboard History page needs the local helper.)
 
 ---
 
@@ -38,6 +38,29 @@ Save text snippets, URLs, credentials, images, or any value you need to copy rep
 8. Use the search bar or tag tabs to filter entries
 9. Pin frequently used entries with the ★ button
 10. Use **Export JSON** to back up or transfer data between browsers
+
+---
+
+### Clipboard History (Clipboard.html + helper)
+
+Shows the text and images you copied recently anywhere on your PC, so you can copy them again or save them into FastCopy.
+
+**Why a helper is needed:**  
+A web page cannot watch the clipboard in the background. A small local Node app (`helper/server.js`) does that and the page reads its list. Requires Node.js on Windows.
+
+**How to use:**
+1. Double-click `start-helper.cmd` and keep the window open
+2. The browser opens `http://127.0.0.1:3210/Clipboard.html`
+3. Copy text or images as normal, and they appear in the list (newest first)
+4. Click an item to copy it again, press the disk button to save it as a FastCopy entry, or the bin button to remove it
+5. Press **Pause** before copying sensitive data such as passwords
+
+**Notes:**
+- Open the pages through `http://127.0.0.1:3210/` (served by the helper), not by double-clicking the HTML files. Browser storage is tied to the address, so entries saved under `file://` do not appear there. Use **Export JSON** on the old page and **Import JSON** on the new one once.
+- History is kept in memory only (last 50 items) and is lost when the helper stops. Items are only stored permanently if you click save.
+- The helper listens on `127.0.0.1` only, rejects unknown Host/Origin headers, and serves only the tool pages. Nothing is sent over the internet.
+- Whatever was on the clipboard before the helper started is ignored.
+- Text up to 100,000 characters and images up to 10 MB are captured. Copied files are not.
 
 ---
 
@@ -112,6 +135,9 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 
 ```
 ├── FastCopy.html     # Clipboard cache utility
+├── Clipboard.html    # Clipboard history viewer (needs the helper)
+├── helper/server.js  # Local clipboard watcher + web server (Node.js)
+├── start-helper.cmd  # Starts the helper and opens the Clipboard page
 ├── IDGenerator.html  # Malaysian NRIC generator
 ├── BRNGenerator.html # Malaysian SSM BRN generator
 ├── nav.js            # Shared navigation bar
@@ -132,6 +158,11 @@ A shared JavaScript file that injects a consistent sticky navigation bar across 
 ---
 
 ## Changelog
+
+### v1.0.14
+- New: Clipboard History page (`Clipboard.html`) showing text and images copied on the PC, with copy-again, save-to-FastCopy, remove, pause/resume and clear
+- New: local helper (`helper/server.js`, `start-helper.cmd`) that watches the Windows clipboard, keeps the last 50 items in memory only, and serves the pages on `http://127.0.0.1:3210`
+- Added Clipboard to the shared navigation bar
 
 ### v1.0.13
 - FastCopy: added a "Reset Data" button on the list page to clear all entries, tag colors, and stored images

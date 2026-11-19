@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastCopy - Clipboard History</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255,255,255,0.95); border-radius: 16px; padding: 32px;
+            max-width: 700px; width: 100%; margin: 0 auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h2 { color: #1a1a2e; margin-bottom: 8px; font-size: 1.4rem; }
+        .subtitle { color: #666; font-size: 0.8rem; margin-bottom: 16px; }
+        .status {
+            display: flex; align-items: center; gap: 8px; font-size: 0.85rem;
+            margin-bottom: 14px; color: #333;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #aaa; }
+        .dot.on { background: #27ae60; }
+        .dot.paused { background: #f39c12; }
+        .dot.off { background: #e74c3c; }
+        .bar { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 16px; flex-wrap: wrap; }
+        .bar button {
+            padding: 8px 14px; border: 2px solid #e0e0e0; border-radius: 8px;
+            background: #fff; font-size: 0.8rem; cursor: pointer;
+            font-weight: 500; transition: all 0.2s;
+        }
+        .bar button:hover { border-color: #2c5364; background: #f0f7fa; }
+        .notice {
+            background: #fff8e1; border: 1px solid #f5d77a; color: #7a5b00;
+            border-radius: 8px; padding: 10px 14px; font-size: 0.8rem; margin-bottom: 16px;
+        }
+        .offline {
+            background: #fdecea; border: 1px solid #f5b5ae; color: #8a1f11;
+            border-radius: 8px; padding: 14px; font-size: 0.9rem; margin-bottom: 16px; display: none;
+        }
+        .offline code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; }
+        .item-list { display: flex; flex-direction: column; gap: 6px; }
+        .item-card {
+            background: #f9fafb; border: 2px solid #e8e8e8; border-radius: 10px;
+            padding: 10px 90px 10px 14px; cursor: pointer; transition: all 0.2s; position: relative;
+        }
+        .item-card:hover { border-color: #2c5364; background: #f0f7fa; }
+        .item-card.copied { border-color: #27ae60; background: #eafaf1; }
+        .item-value {
+            font-family: 'Courier New', monospace; font-size: 0.95rem; color: #1a1a2e;
+            font-weight: 600; word-break: break-all; white-space: pre-wrap;
+            max-height: 110px; overflow: hidden;
+        }
+        .item-value img { max-width: 100%; max-height: 120px; border-radius: 6px; display: block; }
+        .item-meta { color: #999; font-size: 0.7rem; margin-top: 6px; }
+        .item-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; z-index: 10; }
+        .item-actions button {
+            background: rgba(255,255,255,0.8); border: 1px solid #ddd; cursor: pointer;
+            font-size: 1.1rem; opacity: 0.6; transition: opacity 0.2s, background 0.2s;
+            padding: 4px 6px; min-width: 32px; min-height: 32px; display: inline-flex;
+            align-items: center; justify-content: center; border-radius: 6px;
+        }
+        .item-actions button:hover { opacity: 1; background: #fff; }
+        .item-card:hover .item-actions button { opacity: 1; }
+        @media (hover: none), (pointer: coarse) {
+            .item-actions button { opacity: 1; background: #fff; }
+        }
+        .empty-state { text-align: center; color: #aaa; padding: 40px; font-size: 0.95rem; }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #27ae60; color: #fff; padding: 12px 24px;
+            border-radius: 8px; font-size: 0.9rem; font-weight: 500;
+            opacity: 0; transition: transform 0.3s, opacity 0.3s;
+            pointer-events: none; z-index: 999;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    </style>
+</head>
+<body>
+    <script src="nav.js"></script>
+
+    <div class="container">
+        <h2>Clipboard History</h2>
+        <p class="subtitle">Text and images you copy on this PC. Kept in memory by the helper only. Click an item to copy it again, or save it to FastCopy.</p>
+
+        <div class="offline" id="offline"></div>
+
+        <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Connecting...</span></div>
+
+        <div class="notice">The helper records everything you copy, including passwords. Press Pause before copying sensitive data.</div>
+
+        <div class="bar">
+            <button id="pauseBtn" onclick="togglePause()">Pause</button>
+            <button onclick="clearAll()">Clear all</button>
+        </div>
+
+        <div class="item-list" id="itemList">
+            <div class="empty-state">Nothing here yet. Copy some text or an image.</div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Copied!</div>
+
+    <script>
+        var POLL_MS = 1500;
+        var state = { online: false, paused: false, items: [] };
+        var lastSignature = '';
+
+        // --- Toast ---
+        function showToast(msg) {
+            var t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(function() { t.classList.remove('show'); }, 2000);
+        }
+
+        // --- Helper API ---
+        function api(method, url) {
+            return fetch(url, { method: method, cache: 'no-store' }).then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            });
+        }
+
+        function refresh() {
+            return api('GET', '/api/items').then(function(data) {
+                state.online = true;
+                state.paused = !!data.paused;
+                state.items = data.items || [];
+            }).catch(function() {
+                state.online = false;
+            }).then(render);
+        }
+
+        function togglePause() {
+            api('POST', state.paused ? '/api/resume' : '/api/pause').then(refresh)
+                .catch(function() { showToast('Helper not reachable'); });
+        }
+
+        function clearAll() {
+            if (!state.items.length) return;
+            if (!confirm('Clear all clipboard history from the helper?')) return;
+            api('DELETE', '/api/items').then(refresh)
+                .catch(function() { showToast('Helper not reachable'); });
+        }
+
+        function deleteItem(id) {
+            api('DELETE', '/api/items/' + encodeURIComponent(id)).then(refresh)
+                .catch(function() { showToast('Helper not reachable'); });
+        }
+
+        // --- Saving into FastCopy storage (same keys and format as FastCopy.html) ---
+        var IMAGE_DB = 'fastcopy_images';
+        var IMAGE_STORE = 'images';
+
+        function putImage(key, blob) {
+            return new Promise(function(resolve, reject) {
+                var req = indexedDB.open(IMAGE_DB, 1);
+                req.onupgradeneeded = function() {
+                    if (!req.result.objectStoreNames.contains(IMAGE_STORE)) {
+                        req.result.createObjectStore(IMAGE_STORE);
+                    }
+                };
+                req.onerror = function() { reject(req.error); };
+                req.onsuccess = function() {
+                    var db = req.result;
+                    var tx = db.transaction(IMAGE_STORE, 'readwrite');
+                    tx.objectStore(IMAGE_STORE).put(blob, key);
+                    tx.oncomplete = function() { db.close(); resolve(key); };
+                    tx.onerror = function() { db.close(); reject(tx.error); };
+                };
+            });
+        }
+
+        function readEntries() {
+            try { return JSON.parse(localStorage.getItem('fastcopy_entries') || '[]'); }
+            catch (e) { return []; }
+        }
+
+        function saveEntryToFastCopy(entry) {
+            var list = readEntries();
+            list.unshift(entry);
+            try {
+                localStorage.setItem('fastcopy_entries', JSON.stringify(list));
+                return true;
+            } catch (e) {
+                showToast('Storage full - entry not saved');
+                return false;
+            }
+        }
+
+        function newEntry(type, value, imageKey) {
+            var id = Date.now();
+            return {
+                id: id,
+                type: type,
+                imageKey: imageKey || null,
+                value: value,
+                tags: [],
+                remark: '',
+                masked: false,
+                created: new Date().toISOString(),
+                copyCount: 0,
+                lastCopied: null
+            };
+        }
+
+        function saveItem(item) {
+            if (item.type === 'text') {
+                if (saveEntryToFastCopy(newEntry('text', item.text, null))) showToast('Saved to FastCopy');
+                return;
+            }
+            fetch('/api/images/' + encodeURIComponent(item.id) + '.png', { cache: 'no-store' })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+                .then(function(blob) {
+                    var entry = newEntry('image', null, null);
+                    entry.imageKey = 'img_' + entry.id;
+                    return putImage(entry.imageKey, blob).then(function() {
+                        if (!saveEntryToFastCopy(entry)) {
+                            // Roll back the stored blob so it is not orphaned.
+                            indexedDB.open(IMAGE_DB, 1).onsuccess = function(ev) {
+                                var db = ev.target.result;
+                                db.transaction(IMAGE_STORE, 'readwrite').objectStore(IMAGE_STORE).delete(entry.imageKey);
+                                db.close();
+                            };
+                            return;
+                        }
+                        showToast('Image saved to FastCopy');
+                    });
+                })
+                .catch(function() { showToast('Could not save image'); });
+        }
+
+        // --- Copy again ---
+        function copyItem(item, card) {
+            var done = function(msg) {
+                showToast(msg);
+                card.classList.add('copied');
+                setTimeout(function() { card.classList.remove('copied'); }, 1500);
+            };
+            if (item.type === 'text') {
+                navigator.clipboard.writeText(item.text).then(function() {
+                    done('Copied: ' + item.text.substring(0, 40) + (item.text.length > 40 ? '...' : ''));
+                }).catch(function() { showToast('Copy failed'); });
+                return;
+            }
+            if (typeof ClipboardItem === 'undefined') { showToast('Image copy not supported in this browser'); return; }
+            fetch('/api/images/' + encodeURIComponent(item.id) + '.png', { cache: 'no-store' })
+                .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+                .then(function(blob) {
+                    var data = {}; data[blob.type || 'image/png'] = blob;
+                    return navigator.clipboard.write([new ClipboardItem(data)]);
+                })
+                .then(function() { done('Image copied to clipboard!'); })
+                .catch(function() { showToast('Image copy failed'); });
+        }
+
+        // --- Rendering (DOM APIs only: clipboard content is untrusted) ---
+        function formatTime(iso) {
+            var d = new Date(iso);
+            return isNaN(d) ? '' : d.toLocaleTimeString();
+        }
+
+        function formatSize(bytes) {
+            return bytes > 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+        }
+
+        function button(label, title, onClick) {
+            var b = document.createElement('button');
+            b.textContent = label;
+            b.title = title;
+            b.setAttribute('aria-label', title);
+            b.addEventListener('click', function(e) { e.stopPropagation(); onClick(); });
+            return b;
+        }
+
+        function render() {
+            var dot = document.getElementById('statusDot');
+            var text = document.getElementById('statusText');
+            var offline = document.getElementById('offline');
+            var pauseBtn = document.getElementById('pauseBtn');
+
+            if (!state.online) {
+                dot.className = 'dot off';
+                text.textContent = 'Helper not running';
+                offline.style.display = 'block';
+                offline.textContent = '';
+                if (location.protocol === 'file:') {
+                    offline.appendChild(document.createTextNode('This page was opened as a file. Start the helper, then open '));
+                    var a = document.createElement('a');
+                    a.href = 'http://127.0.0.1:3210/Clipboard.html';
+                    a.textContent = 'http://127.0.0.1:3210/Clipboard.html';
+                    offline.appendChild(a);
+                    offline.appendChild(document.createTextNode(' instead.'));
+                } else {
+                    offline.appendChild(document.createTextNode('Start the helper by double-clicking '));
+                    var c = document.createElement('code');
+                    c.textContent = 'start-helper.cmd';
+                    offline.appendChild(c);
+                    offline.appendChild(document.createTextNode(' in the FastCopy folder. This page reconnects automatically.'));
+                }
+                pauseBtn.disabled = true;
+            } else {
+                offline.style.display = 'none';
+                pauseBtn.disabled = false;
+                dot.className = 'dot ' + (state.paused ? 'paused' : 'on');
+                text.textContent = state.paused ? 'Paused - not recording' : 'Recording clipboard';
+                pauseBtn.textContent = state.paused ? 'Resume' : 'Pause';
+            }
+
+            // Only rebuild the list when something changed (keeps images from flickering).
+            var signature = state.online + '|' + state.items.map(function(i) { return i.id; }).join(',');
+            if (signature === lastSignature) return;
+            lastSignature = signature;
+
+            var list = document.getElementById('itemList');
+            list.textContent = '';
+            if (!state.items.length) {
+                var empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.textContent = 'Nothing here yet. Copy some text or an image.';
+                list.appendChild(empty);
+                return;
+            }
+
+            state.items.forEach(function(item) {
+                var card = document.createElement('div');
+                card.className = 'item-card';
+                card.addEventListener('click', function() { copyItem(item, card); });
+
+                var value = document.createElement('div');
+                value.className = 'item-value';
+                if (item.type === 'image') {
+                    var img = document.createElement('img');
+                    img.alt = 'Copied image';
+                    img.src = '/api/images/' + encodeURIComponent(item.id) + '.png';
+                    value.appendChild(img);
+                } else {
+                    value.textContent = item.text;
+                }
+                card.appendChild(value);
+
+                var meta = document.createElement('div');
+                meta.className = 'item-meta';
+                meta.textContent = (item.type === 'image' ? 'Image, ' + formatSize(item.size) : 'Text, ' + item.text.length + ' chars') +
+                    ' - ' + formatTime(item.createdAt);
+                card.appendChild(meta);
+
+                var actions = document.createElement('div');
+                actions.className = 'item-actions';
+                actions.appendChild(button('\uD83D\uDCBE', 'Save to FastCopy', function() { saveItem(item); }));
+                actions.appendChild(button('\uD83D\uDDD1', 'Remove from history', function() { deleteItem(item.id); }));
+                card.appendChild(actions);
+
+                list.appendChild(card);
+            });
+        }
+
+        refresh();
+        setInterval(function() { if (!document.hidden) refresh(); }, POLL_MS);
+        document.addEventListener('visibilitychange', function() { if (!document.hidden) refresh(); });
+    </script>
+</body>
+</html>

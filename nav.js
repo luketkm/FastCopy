@@ -3,6 +3,7 @@
     var pages = [
         { name: '+ Add', href: 'FastCopy.html', param: 'add', icon: '' },
         { name: 'List', href: 'FastCopy.html', param: 'list', icon: '&#128203;' },
+        { name: 'Clipboard', href: 'Clipboard.html', param: '', icon: '&#128337;' },
         { name: 'ID Generator', href: 'IDGenerator.html', param: '', icon: '' },
         { name: 'BRN Generator', href: 'BRNGenerator.html', param: '', icon: '' }
     ];
@@ -60,6 +61,6 @@
     // Version number
     var version = document.createElement('span');
     version.className = 'version';
-    version.textContent = 'v1.0.13';
+    version.textContent = 'v1.0.14';
     nav.appendChild(version);
 })();
